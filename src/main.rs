@@ -3,11 +3,13 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use rust400::parser::{CommandValidation, parse_command, validate_command};
 use rust400::workspace::Workspace;
 
 const STARTUP_MESSAGE: &str = "Rust/400 interactive shell: initialization complete.";
 const PROMPT: &str = "R400> ";
 const EXIT_COMMAND: &str = "EXIT";
+const HELP_COMMAND: &str = "HELP";
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
 
 fn main() -> ExitCode {
@@ -99,10 +101,67 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
             return Ok(());
         }
 
-        writeln!(
-            output,
-            "Command '{command}' is not available yet. Type {EXIT_COMMAND} to close the session."
-        )?;
+        match parse_command(command) {
+            Ok(parsed) => {
+                if parsed.name == EXIT_COMMAND {
+                    writeln!(output, "Session ended.")?;
+                    return Ok(());
+                }
+
+                if parsed.name == HELP_COMMAND && parsed.parameters.is_empty() {
+                    writeln!(
+                        output,
+                        "Available commands are still limited. Use EXIT to close the session."
+                    )?;
+                    continue;
+                }
+
+                let validation = placeholder_validation_for(&parsed.name);
+
+                if let Err(error) = validate_command(&parsed, &validation) {
+                    writeln!(output, "Validation error: {error}")?;
+                    continue;
+                }
+
+                writeln!(
+                    output,
+                    "Command '{}' parsed successfully, but execution is not available yet.",
+                    parsed.name
+                )?;
+            }
+            Err(error) => {
+                writeln!(output, "Syntax error: {error}")?;
+            }
+        }
+    }
+}
+
+fn placeholder_validation_for(command_name: &str) -> CommandValidation {
+    match command_name {
+        "CRTLIB" => CommandValidation {
+            required_parameters: vec!["LIB"],
+            optional_parameters: vec!["TEXT"],
+            repeated_parameters: Vec::new(),
+            mutually_exclusive_pairs: Vec::new(),
+        },
+        "SNDMSG" => CommandValidation {
+            required_parameters: vec!["MSG"],
+            optional_parameters: vec!["TO"],
+            repeated_parameters: vec!["TO"],
+            mutually_exclusive_pairs: Vec::new(),
+        },
+        "WRKOBJ" => CommandValidation {
+            required_parameters: Vec::new(),
+            optional_parameters: vec!["LIB", "OBJ"],
+            repeated_parameters: Vec::new(),
+            mutually_exclusive_pairs: vec![("LIB", "OBJ")],
+        },
+        _ => CommandValidation {
+            required_parameters: Vec::new(),
+            optional_parameters: Vec::new(),
+            repeated_parameters: Vec::new(),
+            mutually_exclusive_pairs: Vec::new(),
+        },
     }
 }
 
@@ -212,5 +271,38 @@ mod tests {
         assert!(transcript.contains("Workspace: "));
         assert!(transcript.contains(&format!("Type {EXIT_COMMAND} to end the session.")));
         assert!(transcript.contains("Session ended."));
+    }
+
+    #[test]
+    fn recognized_syntax_is_parsed_before_execution_exists() {
+        let mut input = Cursor::new("crtlib lib(mylib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Command 'CRTLIB' parsed successfully"));
+    }
+
+    #[test]
+    fn malformed_syntax_reports_a_parser_error() {
+        let mut input = Cursor::new("crtlib lib(\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Syntax error:"));
+    }
+
+    #[test]
+    fn invalid_parameters_report_a_validation_error() {
+        let mut input = Cursor::new("crtlib text('only text')\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Validation error: missing required parameter LIB"));
     }
 }
