@@ -7,7 +7,9 @@ use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
 };
-use rust400::menus::{find_menu, registered_menus, validate_menu_registry};
+use rust400::menus::{
+    MenuAction, find_menu, find_option, registered_menus, validate_menu_registry,
+};
 use rust400::parser::parse_command;
 use rust400::ui::{INPUT_PROMPT, MenuScreen, render_menu};
 use rust400::workspace::Workspace;
@@ -78,26 +80,18 @@ fn run_interactive_session(
     }
 }
 
-fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
-    let screen = MenuScreen {
-        menu,
-        system_name: "RUST400",
-        current_user: "MW",
-        job_name: "QPADEV0001",
-    };
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ScreenState {
+    MainMenu,
+}
 
-    write!(output, "{}", render_menu(&screen))?;
-    writeln!(output, "  Workspace: {}", workspace.root().display())?;
-    writeln!(
-        output,
-        "  Enter EXIT in the command line to end the session."
-    )?;
-    Ok(())
+fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
+    render_active_screen(output, workspace, ScreenState::MainMenu)
 }
 
 fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result<()> {
     let mut line = String::new();
+    let mut current_screen = ScreenState::MainMenu;
 
     loop {
         write!(output, "  {INPUT_PROMPT}")?;
@@ -114,6 +108,17 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
 
         if command.is_empty() {
             continue;
+        }
+
+        if let Some(result) = try_menu_selection(command, current_screen, output)? {
+            match result {
+                MenuSelectionResult::Continue => continue,
+                MenuSelectionResult::Render(screen) => {
+                    current_screen = screen;
+                    continue;
+                }
+                MenuSelectionResult::Exit => return Ok(()),
+            }
         }
 
         match parse_command(command) {
@@ -195,6 +200,85 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
             }
         }
     }
+}
+
+fn render_active_screen(
+    output: &mut impl Write,
+    workspace: &Workspace,
+    screen_state: ScreenState,
+) -> io::Result<()> {
+    match screen_state {
+        ScreenState::MainMenu => {
+            let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+            let screen = MenuScreen {
+                menu,
+                system_name: "RUST400",
+                current_user: "MW",
+                job_name: "QPADEV0001",
+            };
+
+            write!(output, "{}", render_menu(&screen))?;
+            writeln!(output, "  Workspace: {}", workspace.root().display())?;
+            writeln!(
+                output,
+                "  Enter EXIT in the command line to end the session."
+            )?;
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MenuSelectionResult {
+    Continue,
+    Render(ScreenState),
+    Exit,
+}
+
+fn try_menu_selection(
+    input: &str,
+    current_screen: ScreenState,
+    output: &mut impl Write,
+) -> io::Result<Option<MenuSelectionResult>> {
+    let ScreenState::MainMenu = current_screen;
+    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+
+    if let Some(option) = find_option(menu, input) {
+        return Ok(Some(match option.action {
+            MenuAction::RunCommand("EXIT") => {
+                writeln!(output, "Menu selection 90 -> Sign off")?;
+                writeln!(output, "Session ended.")?;
+                MenuSelectionResult::Exit
+            }
+            MenuAction::RunCommand(command_name) => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {} maps to command '{}'.",
+                    option.selector, option.label, command_name
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::OpenMenu(target_menu) => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {} would open menu '{}'. Returning to MAIN until that menu is implemented.",
+                    option.selector, option.label, target_menu
+                )?;
+                MenuSelectionResult::Render(ScreenState::MainMenu)
+            }
+        }));
+    }
+
+    if input.chars().all(|character| character.is_ascii_digit()) {
+        writeln!(
+            output,
+            "Selection '{input}' is not valid on menu {}.",
+            menu.id
+        )?;
+        return Ok(Some(MenuSelectionResult::Continue));
+    }
+
+    Ok(None)
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -379,5 +463,51 @@ mod tests {
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Command 'CRTLIB' is mapped to handler CreateLibrary"));
         assert!(transcript.contains("library 'MYLIB'"));
+    }
+
+    #[test]
+    fn numeric_main_menu_selection_is_handled_from_menu_metadata() {
+        let mut input = Cursor::new("1\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Menu selection 1 -> User tasks would open menu 'USR'."));
+    }
+
+    #[test]
+    fn invalid_numeric_selection_reports_menu_specific_error() {
+        let mut input = Cursor::new("77\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Selection '77' is not valid on menu MAIN."));
+    }
+
+    #[test]
+    fn direct_commands_still_work_from_the_main_menu_input_field() {
+        let mut input = Cursor::new("help cmd(crtlib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Command: CRTLIB"));
+        assert!(transcript.contains("Summary: Create an emulated library definition."));
+    }
+
+    #[test]
+    fn sign_off_selection_exits_consistently_from_the_menu() {
+        let mut input = Cursor::new("90\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Menu selection 90 -> Sign off"));
+        assert!(transcript.contains("Session ended."));
     }
 }

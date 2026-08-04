@@ -134,6 +134,12 @@ pub fn find_menu(id: &str) -> Option<&'static MenuDefinition> {
     registered_menus().iter().find(|menu| menu.id == id)
 }
 
+pub fn find_option<'a>(menu: &'a MenuDefinition, selection: &str) -> Option<&'a MenuOption> {
+    menu.options
+        .iter()
+        .find(|option| option.selector.eq_ignore_ascii_case(selection))
+}
+
 pub fn validate_menu_registry(menus: &[MenuDefinition]) -> Result<(), &'static str> {
     for menu in menus {
         if menu.id.trim().is_empty() {

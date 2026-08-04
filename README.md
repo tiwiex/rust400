@@ -18,6 +18,11 @@ The latest UI story now renders a text-mode main menu layout with:
 
 The menu content is now driven by shared menu metadata rather than being hard-coded directly inside the renderer. That means labels, options, and footer hints can be validated and reused by both rendering and future navigation logic.
 
+The main screen input field now accepts both:
+
+- numbered menu selections such as `1` or `90`
+- direct commands such as `HELP` or `CRTLIB LIB(MYLIB)`
+
 ## Prerequisites
 
 - A current 64-bit Linux environment
@@ -64,6 +69,22 @@ MAIN                            IBM i Main Menu              System: RUST400
   Workspace: /absolute/path/to/rust400-system
   Enter EXIT in the command line to end the session.
   ===>
+```
+
+Example mixed input behavior today:
+
+```text
+  ===> 1
+Menu selection 1 -> User tasks would open menu 'USR'. Returning to MAIN until that menu is implemented.
+  ===> help cmd(crtlib)
+Command: CRTLIB
+Summary: Create an emulated library definition.
+...
+  ===> 77
+Selection '77' is not valid on menu MAIN.
+  ===> 90
+Menu selection 90 -> Sign off
+Session ended.
 ```
 
 That current screen is the first presentation slice, not the final interface target. The product direction now explicitly aims toward richer full-screen menu navigation above this command engine.
