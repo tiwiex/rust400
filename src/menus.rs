@@ -5,9 +5,20 @@ pub enum MenuAction {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum FunctionKeyAction {
+    Exit,
+    Prompt,
+    Retrieve,
+    Cancel,
+    Help,
+    SetInitialMenu,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct FooterHint {
     pub key: &'static str,
     pub label: &'static str,
+    pub action: FunctionKeyAction,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -94,26 +105,32 @@ const MAIN_MENU_HINTS: &[FooterHint] = &[
     FooterHint {
         key: "F3",
         label: "Exit",
+        action: FunctionKeyAction::Exit,
     },
     FooterHint {
         key: "F4",
         label: "Prompt",
+        action: FunctionKeyAction::Prompt,
     },
     FooterHint {
         key: "F9",
         label: "Retrieve",
+        action: FunctionKeyAction::Retrieve,
     },
     FooterHint {
         key: "F12",
         label: "Cancel",
+        action: FunctionKeyAction::Cancel,
     },
     FooterHint {
         key: "F13",
         label: "Information Assistant",
+        action: FunctionKeyAction::Help,
     },
     FooterHint {
         key: "F23",
         label: "Set initial menu",
+        action: FunctionKeyAction::SetInitialMenu,
     },
 ];
 
@@ -138,6 +155,12 @@ pub fn find_option<'a>(menu: &'a MenuDefinition, selection: &str) -> Option<&'a 
     menu.options
         .iter()
         .find(|option| option.selector.eq_ignore_ascii_case(selection))
+}
+
+pub fn find_footer_hint<'a>(menu: &'a MenuDefinition, key: &str) -> Option<&'a FooterHint> {
+    menu.footer_hints
+        .iter()
+        .find(|hint| hint.key.eq_ignore_ascii_case(key))
 }
 
 pub fn validate_menu_registry(menus: &[MenuDefinition]) -> Result<(), &'static str> {
@@ -193,7 +216,8 @@ pub fn validate_menu_registry(menus: &[MenuDefinition]) -> Result<(), &'static s
 #[cfg(test)]
 mod tests {
     use super::{
-        FooterHint, MenuAction, MenuDefinition, MenuOption, find_menu, validate_menu_registry,
+        FooterHint, FunctionKeyAction, MenuAction, MenuDefinition, MenuOption, find_footer_hint,
+        find_menu, validate_menu_registry,
     };
 
     #[test]
@@ -206,6 +230,12 @@ mod tests {
         assert_eq!(menu.options[0].label, "User tasks");
         assert_eq!(menu.options[11].selector, "90");
         assert_eq!(menu.options[11].action, MenuAction::RunCommand("EXIT"));
+        assert_eq!(
+            find_footer_hint(menu, "F3")
+                .expect("F3 should exist")
+                .action,
+            FunctionKeyAction::Exit
+        );
     }
 
     #[test]
@@ -223,6 +253,7 @@ mod tests {
             footer_hints: &[FooterHint {
                 key: "F3",
                 label: "Exit",
+                action: FunctionKeyAction::Exit,
             }],
         }];
 

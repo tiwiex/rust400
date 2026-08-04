@@ -17,11 +17,12 @@ The latest UI story now renders a text-mode main menu layout with:
 - a footer legend with function-key hints
 
 The menu content is now driven by shared menu metadata rather than being hard-coded directly inside the renderer. That means labels, options, and footer hints can be validated and reused by both rendering and future navigation logic.
-
 The main screen input field now accepts both:
 
 - numbered menu selections such as `1` or `90`
 - direct commands such as `HELP` or `CRTLIB LIB(MYLIB)`
+
+The current function-key MVP treats typed entries such as `F3` or `F12` as function-key actions from the same input line.
 
 ## Prerequisites
 
@@ -88,6 +89,17 @@ Session ended.
 ```
 
 That current screen is the first presentation slice, not the final interface target. The product direction now explicitly aims toward richer full-screen menu navigation above this command engine.
+
+Current function-key behavior:
+
+- `F3`: exit the session
+- `F4`: prompt with input guidance
+- `F9`: retrieve the most recent direct input
+- `F12`: cancel and remain on the main menu
+- `F13`: show Information Assistant guidance
+- `F23`: report that setting the initial menu is not implemented yet
+
+Unsupported function keys fail gracefully with a menu-specific message.
 
 Example parser behavior today:
 
