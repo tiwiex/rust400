@@ -12,7 +12,7 @@ use rust400::menus::{
     validate_menu_registry,
 };
 use rust400::parser::parse_command;
-use rust400::ui::{INPUT_PROMPT, MenuScreen, render_menu};
+use rust400::ui::{INPUT_PROMPT, MenuScreen, render_green_screen};
 use rust400::workspace::Workspace;
 
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
@@ -228,7 +228,7 @@ fn render_active_screen(
                 job_name: "QPADEV0001",
             };
 
-            write!(output, "{}", render_menu(&screen))?;
+            write!(output, "{}", render_green_screen(&screen))?;
             writeln!(output, "  Workspace: {}", workspace.root().display())?;
             writeln!(
                 output,
