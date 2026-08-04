@@ -54,6 +54,16 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
+## Complete quality gate
+
+Run the same formatting, linting, and test sequence used by continuous integration:
+
+```sh
+./scripts/check.sh
+```
+
+The script stops at the first failed stage, names that stage, and returns its nonzero exit status. GitHub Actions runs it for changes pushed to `main` or a `story/**` branch and for pull requests.
+
 ## Development workflow
 
 - Read [AGENTS.md](AGENTS.md) for repository guardrails.
