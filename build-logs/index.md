@@ -4,6 +4,7 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-04 | [Parse CL-like command syntax](2026-08-04-us-002-02-parse-cl-like-command-syntax.md) | `US-002-02` | Verified |
 | 2026-08-04 | [Run an interactive command loop](2026-08-04-us-002-01-interactive-command-loop.md) | `US-002-01` | Verified |
 | 2026-08-04 | [Trace work through delivery artifacts](2026-08-04-us-001-05-trace-work-through-delivery.md) | `US-001-05` | Verified |
 | 2026-08-04 | [Record architecture decisions](2026-08-04-us-001-04-record-architecture-decisions.md) | `US-001-04` | Verified |
