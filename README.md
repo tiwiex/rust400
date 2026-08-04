@@ -6,7 +6,7 @@ Rust/400 is not affiliated with IBM and is not an IBM i replacement or binary-co
 
 ## Current status
 
-The project initializes an isolated permanent or disposable workspace and then prints a deliberate placeholder message. Command parsing and emulated system behavior belong to later user stories.
+The project initializes an isolated permanent or disposable workspace and starts an interactive shell loop. `EXIT` and end-of-input close the session cleanly. Blank input is ignored. Command parsing and emulated system behavior beyond that loop belong to later user stories.
 
 ## Prerequisites
 
@@ -25,8 +25,10 @@ cargo run -- --workspace /absolute/path/to/rust400-system
 Expected startup output:
 
 ```text
-Rust/400 development shell: initialization complete; no commands are available yet.
+Rust/400 interactive shell: initialization complete.
 Workspace: /absolute/path/to/rust400-system
+Type EXIT to end the session. Additional commands will arrive in later stories.
+R400>
 ```
 
 Rust/400 requires an absolute path and rejects parent traversal and symbolic links in workspace paths. Initialization creates `system.meta` beneath the workspace. It does not treat the workspace path as an emulated object name.
