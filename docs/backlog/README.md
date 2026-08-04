@@ -30,8 +30,9 @@ Every MVP story must:
 | [EPIC-005](epics/EPIC-005-jobs-messages-history.md) | Jobs, messages, and history | Sessions behave like inspectable jobs with useful operational feedback | 5 |
 | [EPIC-006](epics/EPIC-006-spooling-and-batch.md) | Spooled output and batch execution | Users can retain reports and automate repeatable command flows | 6 |
 | [EPIC-007](epics/EPIC-007-mvp-hardening.md) | MVP hardening and release | The MVP is safe, documented, measurable, and releasable | 7 |
+| [EPIC-008](epics/EPIC-008-operator-interface.md) | Operator interface and menu presentation | Users can work through a recognizably AS/400-style full-screen interface | 3, then continuous |
 
-Sequence numbers express technical dependency, not fixed iterations. EPIC-003 begins after the help framework exists and continues alongside each domain epic.
+Sequence numbers express technical dependency, not fixed iterations. EPIC-008 begins once the shared command and help foundations are stable, then continues alongside the command and domain epics. EPIC-003 begins after the help framework exists and continues alongside each domain epic.
 
 ## Story states
 

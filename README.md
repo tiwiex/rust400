@@ -1,12 +1,12 @@
 # Rust/400
 
-Rust/400 is an educational, OS/400-inspired shell for Linux. It aims to teach selected OS/400 concepts alongside their closest Linux analogies while explaining where those comparisons break down.
+Rust/400 is an educational, AS/400-inspired emulator for Linux. It aims to teach selected AS/400 and OS/400 concepts alongside their closest Linux analogies while building toward a recognizably green-screen-style operator experience.
 
 Rust/400 is not affiliated with IBM and is not an IBM i replacement or binary-compatible emulator. See the [Product Requirements Document](docs/PRD.md) for the product boundary and planned MVP.
 
 ## Current status
 
-The project initializes an isolated permanent or disposable workspace and starts an interactive shell loop. `EXIT` and end-of-input close the session cleanly. Blank input is ignored. The shell now uses shared command metadata to drive validation, command-specific help, and typed handler requests from one registry.
+The long-term target is a 5250-style, AS/400-like full-screen experience with menus, a command line, and function-key guidance. The project is not there yet. The current implementation is the underlying command engine: it initializes an isolated permanent or disposable workspace, starts an interactive command loop, and uses shared command metadata to drive validation, command-specific help, and typed handler requests from one registry.
 
 ## Prerequisites
 
@@ -30,6 +30,8 @@ Workspace: /absolute/path/to/rust400-system
 Type EXIT to end the session. Additional commands will arrive in later stories.
 R400>
 ```
+
+That current prompt is a foundation layer, not the final interface target. The product direction now explicitly aims toward a full-screen main-menu presentation above this command engine.
 
 Example parser behavior today:
 
@@ -105,6 +107,7 @@ The script stops at the first failed stage, names that stage, and returns its no
 
 - [Product requirements](docs/PRD.md)
 - [Epics and user stories](docs/backlog/README.md)
+- [Operator interface epic](docs/backlog/epics/EPIC-008-operator-interface.md)
 - [Development process](docs/DEVELOPMENT_PROCESS.md)
 - [Architecture decisions](docs/adr/index.md)
 - [Active Rust/400 prompt suite](prompts-400/README.md)
