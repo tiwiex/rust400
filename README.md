@@ -8,6 +8,14 @@ Rust/400 is not affiliated with IBM and is not an IBM i replacement or binary-co
 
 The long-term target is a 5250-style, AS/400-like full-screen experience with menus, a command line, and function-key guidance. The project is not there yet. The current implementation is the underlying command engine: it initializes an isolated permanent or disposable workspace, starts an interactive command loop, and uses shared command metadata to drive validation, command-specific help, and typed handler requests from one registry.
 
+The latest UI story now renders a text-mode main menu layout with:
+
+- a title area
+- system context
+- numbered main-menu options
+- a `Selection or command` input line
+- a footer legend with function-key hints
+
 ## Prerequisites
 
 - A current 64-bit Linux environment
@@ -25,13 +33,38 @@ cargo run -- --workspace /absolute/path/to/rust400-system
 Expected startup output:
 
 ```text
-Rust/400 interactive shell: initialization complete.
-Workspace: /absolute/path/to/rust400-system
-Type EXIT to end the session. Additional commands will arrive in later stories.
-R400>
+MAIN                            IBM i Main Menu              System: RUST400
+
+  Select one of the following:
+
+     1. User tasks
+     2. Office tasks
+     3. General system tasks
+     4. Files, libraries, and folders
+     5. Programming
+     6. Communications
+     7. Define or change the system
+     8. Problem handling
+     9. Display a menu
+     10. Information Assistant options
+     11. IBM i Access tasks
+
+     90. Sign off
+
+  Selection or command
+  ===>
+  ----------------------------------------------------------------------------
+  F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel   F13=Information Assistant
+  F23=Set initial menu
+
+  User: MW           Job: QPADEV0001
+
+  Workspace: /absolute/path/to/rust400-system
+  Enter EXIT in the command line to end the session.
+  ===>
 ```
 
-That current prompt is a foundation layer, not the final interface target. The product direction now explicitly aims toward a full-screen main-menu presentation above this command engine.
+That current screen is the first presentation slice, not the final interface target. The product direction now explicitly aims toward richer full-screen menu navigation above this command engine.
 
 Example parser behavior today:
 

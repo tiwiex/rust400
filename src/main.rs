@@ -8,10 +8,9 @@ use rust400::commands::{
     validate_registry_metadata,
 };
 use rust400::parser::parse_command;
+use rust400::ui::{INPUT_PROMPT, MainMenuScreen, render_main_menu};
 use rust400::workspace::Workspace;
 
-const STARTUP_MESSAGE: &str = "Rust/400 interactive shell: initialization complete.";
-const PROMPT: &str = "R400> ";
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
 
 fn main() -> ExitCode {
@@ -74,11 +73,18 @@ fn run_interactive_session(
 }
 
 fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    writeln!(output, "{STARTUP_MESSAGE}")?;
-    writeln!(output, "Workspace: {}", workspace.root().display())?;
+    let screen = MainMenuScreen {
+        system_name: "RUST400",
+        current_user: "MW",
+        job_name: "QPADEV0001",
+        menu_id: "MAIN",
+    };
+
+    write!(output, "{}", render_main_menu(&screen))?;
+    writeln!(output, "  Workspace: {}", workspace.root().display())?;
     writeln!(
         output,
-        "Type EXIT to end the session. Additional commands will arrive in later stories."
+        "  Enter EXIT in the command line to end the session."
     )?;
     Ok(())
 }
@@ -87,7 +93,7 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
     let mut line = String::new();
 
     loop {
-        write!(output, "{PROMPT}")?;
+        write!(output, "  {INPUT_PROMPT}")?;
         output.flush()?;
 
         line.clear();
@@ -209,15 +215,7 @@ mod tests {
 
     use rust400::workspace::Workspace;
 
-    use super::{Mode, PROMPT, STARTUP_MESSAGE, command_loop, parse_mode, run_interactive_session};
-
-    #[test]
-    fn startup_message_identifies_the_interactive_shell() {
-        assert_eq!(
-            STARTUP_MESSAGE,
-            "Rust/400 interactive shell: initialization complete."
-        );
-    }
+    use super::{Mode, command_loop, parse_mode, run_interactive_session};
 
     #[test]
     fn parses_permanent_workspace_mode() {
@@ -247,8 +245,8 @@ mod tests {
         command_loop(&mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.starts_with(PROMPT));
-        assert!(transcript.contains(&format!("{PROMPT}Session ended.")));
+        assert!(transcript.starts_with("  ===> "));
+        assert!(transcript.contains("  ===> Session ended."));
     }
 
     #[test]
@@ -270,7 +268,7 @@ mod tests {
         command_loop(&mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert_eq!(transcript, format!("{PROMPT}\n"));
+        assert_eq!(transcript, "  ===> \n");
     }
 
     #[test]
@@ -283,9 +281,11 @@ mod tests {
         assert_eq!(status, std::process::ExitCode::SUCCESS);
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.contains(STARTUP_MESSAGE));
+        assert!(transcript.contains("IBM i Main Menu"));
+        assert!(transcript.contains("Selection or command"));
+        assert!(transcript.contains("F3=Exit"));
         assert!(transcript.contains("Workspace: "));
-        assert!(transcript.contains("Type EXIT to end the session."));
+        assert!(transcript.contains("Enter EXIT in the command line to end the session."));
         assert!(transcript.contains("Session ended."));
     }
 
