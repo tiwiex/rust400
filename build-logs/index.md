@@ -4,6 +4,7 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-04 | [Record architecture decisions](2026-08-04-us-001-04-record-architecture-decisions.md) | `US-001-04` | Verified |
 | 2026-08-04 | [Create isolated emulator workspaces](2026-08-04-us-001-03-isolated-emulator-workspaces.md) | `US-001-03` | Verified |
 | 2026-08-04 | [Establish automated quality checks](2026-08-04-us-001-02-automated-quality-checks.md) | `US-001-02` | In review |
 | 2026-08-04 | [Initialize the Rust project](2026-08-04-us-001-01-initialize-rust-project.md) | `US-001-01` | Verified |
