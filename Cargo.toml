@@ -1,0 +1,9 @@
+[package]
+name = "rust400"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93.1"
+description = "An educational, OS/400-inspired shell for Linux"
+publish = false
+
+[dependencies]
