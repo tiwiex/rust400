@@ -85,6 +85,7 @@ The script stops at the first failed stage, names that stage, and returns its no
 
 - [Product requirements](docs/PRD.md)
 - [Epics and user stories](docs/backlog/README.md)
+- [Development process](docs/DEVELOPMENT_PROCESS.md)
 - [Architecture decisions](docs/adr/index.md)
 - [Active Rust/400 prompt suite](prompts-400/README.md)
 - [Build-log process](build-logs/README.md)
