@@ -15,6 +15,10 @@ The latest UI story now renders a text-mode main menu layout with:
 - numbered main-menu options
 - a `Selection or command` input line
 - a footer legend with function-key hints
+- a larger centered operator-screen block
+- ANSI green-screen styling in terminals that support it
+
+Font size itself still comes from your terminal emulator, but Rust/400 now makes the screen feel closer to the classic operator console by using a wider centered panel and green-on-black ANSI styling.
 
 The menu content is now driven by shared menu metadata rather than being hard-coded directly inside the renderer. That means labels, options, and footer hints can be validated and reused by both rendering and future navigation logic.
 The main screen input field now accepts both:

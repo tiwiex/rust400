@@ -3,6 +3,11 @@ use std::fmt::Write as _;
 use crate::menus::MenuDefinition;
 
 pub const INPUT_PROMPT: &str = "===> ";
+const PANEL_WIDTH: usize = 78;
+const VIEWPORT_WIDTH: usize = 110;
+const TOP_PADDING_LINES: usize = 2;
+const GREEN_SCREEN_PREFIX: &str = "\x1b[2J\x1b[H\x1b[40m\x1b[92m";
+const GREEN_SCREEN_RESET: &str = "\x1b[0m";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MenuScreen<'a> {
@@ -13,48 +18,83 @@ pub struct MenuScreen<'a> {
 }
 
 pub fn render_menu(screen: &MenuScreen<'_>) -> String {
-    const WIDTH: usize = 78;
-
     let mut output = String::new();
     let system_line = format!("{}: {}", screen.menu.system_label, screen.system_name);
+    let left_pad = " ".repeat((VIEWPORT_WIDTH - PANEL_WIDTH) / 2);
+    let pad = |line: String| format!("{left_pad}{line}");
 
-    writeln!(&mut output, "{}", " ".repeat(WIDTH)).expect("write should succeed");
+    for _ in 0..TOP_PADDING_LINES {
+        writeln!(&mut output).expect("write should succeed");
+    }
+
+    writeln!(&mut output, "{}", pad(" ".repeat(PANEL_WIDTH))).expect("write should succeed");
     writeln!(
         &mut output,
         "{}{}",
-        pad_right(screen.menu.id, 12),
-        center_with_right(screen.menu.title, &system_line, WIDTH - 12)
+        left_pad,
+        format_args!(
+            "{}{}",
+            pad_right(screen.menu.id, 12),
+            center_with_right(screen.menu.title, &system_line, PANEL_WIDTH - 12)
+        )
     )
     .expect("write should succeed");
     writeln!(&mut output).expect("write should succeed");
-    writeln!(&mut output, "  Select one of the following:").expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}",
+        pad("  Select one of the following:".to_string())
+    )
+    .expect("write should succeed");
     writeln!(&mut output).expect("write should succeed");
 
     for option in screen.menu.options {
-        writeln!(&mut output, "     {}. {}", option.selector, option.label)
-            .expect("write should succeed");
+        writeln!(
+            &mut output,
+            "{}",
+            pad(format!("     {}. {}", option.selector, option.label))
+        )
+        .expect("write should succeed");
     }
 
     writeln!(&mut output).expect("write should succeed");
-    writeln!(&mut output, "  {}", screen.menu.prompt_label).expect("write should succeed");
-    writeln!(&mut output, "  {INPUT_PROMPT}").expect("write should succeed");
-    writeln!(&mut output, "  {}", "-".repeat(WIDTH.saturating_sub(2)))
-        .expect("write should succeed");
     writeln!(
         &mut output,
-        "  {}",
-        render_footer_hints(screen.menu.footer_hints)
+        "{}",
+        pad(format!("  {}", screen.menu.prompt_label))
     )
     .expect("write should succeed");
+    writeln!(&mut output, "{}", pad(format!("  {INPUT_PROMPT}"))).expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}",
+        pad(format!("  {}", "-".repeat(PANEL_WIDTH.saturating_sub(2))))
+    )
+    .expect("write should succeed");
+
+    for line in render_footer_hints(screen.menu.footer_hints).lines() {
+        writeln!(&mut output, "{}", pad(format!("  {line}"))).expect("write should succeed");
+    }
+
     writeln!(&mut output).expect("write should succeed");
     writeln!(
         &mut output,
-        "  User: {:<12} Job: {}",
-        screen.current_user, screen.job_name
+        "{}",
+        pad(format!(
+            "  User: {:<12} Job: {}",
+            screen.current_user, screen.job_name
+        ))
     )
     .expect("write should succeed");
 
     output
+}
+
+pub fn render_green_screen(screen: &MenuScreen<'_>) -> String {
+    format!(
+        "{GREEN_SCREEN_PREFIX}{}{GREEN_SCREEN_RESET}",
+        render_menu(screen)
+    )
 }
 
 fn pad_right(text: &str, width: usize) -> String {
@@ -102,7 +142,7 @@ fn render_footer_hints(hints: &[crate::menus::FooterHint]) -> String {
     if second_row.is_empty() {
         first_row.join("   ")
     } else {
-        format!("{}\n  {}", first_row.join("   "), second_row.join("   "))
+        format!("{}\n{}", first_row.join("   "), second_row.join("   "))
     }
 }
 
@@ -110,7 +150,7 @@ fn render_footer_hints(hints: &[crate::menus::FooterHint]) -> String {
 mod tests {
     use crate::menus::find_menu;
 
-    use super::{INPUT_PROMPT, MenuScreen, render_menu};
+    use super::{INPUT_PROMPT, MenuScreen, render_green_screen, render_menu};
 
     #[test]
     fn main_menu_contains_expected_layout_regions() {
@@ -148,36 +188,58 @@ mod tests {
 
         let rendered = render_menu(&screen);
 
-        let expected = [
-            "                                                                              ",
-            "MAIN                         IBM i Main Menu                  System: NCRHEDEV",
-            "",
-            "  Select one of the following:",
-            "",
-            "     1. User tasks",
-            "     2. Office tasks",
-            "     3. General system tasks",
-            "     4. Files, libraries, and folders",
-            "     5. Programming",
-            "     6. Communications",
-            "     7. Define or change the system",
-            "     8. Problem handling",
-            "     9. Display a menu",
-            "     10. Information Assistant options",
-            "     11. IBM i Access tasks",
-            "     90. Sign off",
-            "",
-            "  Selection or command",
-            "  ===> ",
-            "  ----------------------------------------------------------------------------",
-            "  F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel   F13=Information Assistant",
-            "  F23=Set initial menu",
-            "",
-            "  User: MW           Job: QPADEV0001",
-            "",
+        let expected = vec![
+            "".to_string(),
+            "".to_string(),
+            "                                                                                                                                                          "
+                .chars()
+                .take(94)
+                .collect(),
+            "                MAIN                         IBM i Main Menu                  System: NCRHEDEV"
+                .to_string(),
+            "".to_string(),
+            "                  Select one of the following:".to_string(),
+            "".to_string(),
+            "                     1. User tasks".to_string(),
+            "                     2. Office tasks".to_string(),
+            "                     3. General system tasks".to_string(),
+            "                     4. Files, libraries, and folders".to_string(),
+            "                     5. Programming".to_string(),
+            "                     6. Communications".to_string(),
+            "                     7. Define or change the system".to_string(),
+            "                     8. Problem handling".to_string(),
+            "                     9. Display a menu".to_string(),
+            "                     10. Information Assistant options".to_string(),
+            "                     11. IBM i Access tasks".to_string(),
+            "                     90. Sign off".to_string(),
+            "".to_string(),
+            "                  Selection or command".to_string(),
+            "                  ===> ".to_string(),
+            "                  ----------------------------------------------------------------------------".to_string(),
+            "                  F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel   F13=Information Assistant"
+                .to_string(),
+            "                  F23=Set initial menu".to_string(),
+            "".to_string(),
+            "                  User: MW           Job: QPADEV0001".to_string(),
+            "".to_string(),
         ]
         .join("\n");
 
         assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn green_screen_wrapper_adds_terminal_styling() {
+        let screen = MenuScreen {
+            menu: find_menu("MAIN").expect("MAIN menu should exist"),
+            system_name: "NCRHEDEV",
+            current_user: "MW",
+            job_name: "QPADEV0001",
+        };
+
+        let rendered = render_green_screen(&screen);
+
+        assert!(rendered.starts_with("\x1b[2J\x1b[H\x1b[40m\x1b[92m"));
+        assert!(rendered.ends_with("\x1b[0m"));
     }
 }
