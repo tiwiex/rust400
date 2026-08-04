@@ -4,6 +4,7 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-04 | [Render a full-screen main menu](2026-08-04-us-008-01-render-full-screen-main-menu.md) | `US-008-01` | Verified |
 | 2026-08-04 | [Correct product direction toward AS/400-style operator interface](2026-08-04-product-direction-correction-as400-operator-interface.md) | Product scope correction | Verified |
 | 2026-08-04 | [Define commands from shared metadata](2026-08-04-us-002-03-shared-command-metadata.md) | `US-002-03` | Verified |
 | 2026-08-04 | [Parse CL-like command syntax](2026-08-04-us-002-02-parse-cl-like-command-syntax.md) | `US-002-02` | Verified |
