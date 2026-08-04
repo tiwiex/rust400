@@ -63,7 +63,8 @@ story/us-002-01-command-loop
 
 The pull request title begins with the story ID. The description links the epic, PRD requirements, acceptance criteria, test evidence, ADRs, and relevant build log.
 
+Use [STORY_TEMPLATE.md](STORY_TEMPLATE.md) when adding or refining story definitions.
+
 ## Change control
 
 Minor clarification may be committed directly to a story document. A change to product scope or a numbered requirement must first update the PRD, record the reason in a build log, and then update every affected epic and story.
-

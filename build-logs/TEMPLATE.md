@@ -11,6 +11,8 @@
 | Pull request | Link or `Not opened` |
 | Status | Started / In progress / Verified / Blocked / Superseded |
 
+Use the same stable story ID in the branch name, pull-request title, and build-log filename whenever the work belongs to a numbered story.
+
 ## Intended outcome
 
 What user or engineering outcome should this work produce?
@@ -24,6 +26,12 @@ What existed before the work? Record relevant constraints, assumptions, decision
 1. First verifiable step.
 2. Next verifiable step.
 3. Verification and documentation step.
+
+## Story context
+
+- Story title:
+- Acceptance criteria:
+- Definition of Done checks:
 
 ## Work performed
 
@@ -73,4 +81,3 @@ State the most useful next step and link its story or issue where available.
 ## Correction history
 
 Append dated corrections here; do not silently rewrite historical conclusions after merge.
-
