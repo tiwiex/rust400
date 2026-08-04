@@ -6,7 +6,7 @@ Rust/400 is not affiliated with IBM and is not an IBM i replacement or binary-co
 
 ## Current status
 
-The project is at its initial executable baseline. Running it prints a deliberate placeholder message; command parsing and emulated system behavior belong to later user stories.
+The project initializes an isolated permanent or disposable workspace and then prints a deliberate placeholder message. Command parsing and emulated system behavior belong to later user stories.
 
 ## Prerequisites
 
@@ -19,13 +19,22 @@ The checked-in `rust-toolchain.toml` selects the stable channel with the `rustfm
 
 ```sh
 cargo build
-cargo run
+cargo run -- --workspace /absolute/path/to/rust400-system
 ```
 
 Expected startup output:
 
 ```text
 Rust/400 development shell: initialization complete; no commands are available yet.
+Workspace: /absolute/path/to/rust400-system
+```
+
+Rust/400 requires an absolute path and rejects parent traversal and symbolic links in workspace paths. Initialization creates `system.meta` beneath the workspace. It does not treat the workspace path as an emulated object name.
+
+For an automatically removed demonstration or test workspace:
+
+```sh
+cargo run -- --temporary-workspace
 ```
 
 ## Test
