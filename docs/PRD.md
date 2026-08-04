@@ -4,37 +4,37 @@
 |---|---|
 | Product | Rust/400 |
 | Document status | Draft for review |
-| Version | 0.2 |
+| Version | 0.3 |
 | Date | 2026-08-04 |
-| Product type | Educational, OS/400-inspired shell for Linux |
-| Initial interface | Interactive terminal application |
+| Product type | Educational, AS/400-inspired emulator for Linux |
+| Initial interface | 5250-style terminal user interface over a command engine |
 
 ## 1. Executive summary
 
-Rust/400 is an open-source Rust application that recreates selected OS/400 concepts and workflows in a Linux terminal. It is intended for enthusiasts, learners, and developers who want to explore a command-language interface, libraries, objects, jobs, messages, and spooled output without needing IBM hardware or a licensed IBM i environment.
+Rust/400 is an open-source Rust application that recreates selected AS/400 and OS/400 concepts and workflows in a Linux terminal. It is intended for enthusiasts, learners, and developers who want to explore a menu-driven operator experience, command entry, libraries, objects, jobs, messages, and spooled output without needing IBM hardware or a licensed IBM i environment.
 
-The product will provide a safe, deterministic emulation layer over a private workspace on Linux. It will not attempt to run IBM i binaries, reproduce every OS/400 subsystem, or act as a drop-in replacement for IBM i. The first release will emphasize a coherent interactive experience and a maintainable architecture over breadth.
+The product will provide a safe, deterministic emulation layer over a private workspace on Linux. It will not attempt to run IBM i binaries, reproduce every OS/400 subsystem, or act as a drop-in replacement for IBM i. The first release will emphasize a recognizable green-screen-style interactive experience and a maintainable architecture over breadth.
 
 The project also serves as a practical example of disciplined product delivery. Requirements will be traceable from this PRD to epics, user stories, acceptance criteria, branches, commits, tests, and releases.
 
 ## 2. Problem statement
 
-Access to legacy OS/400 environments is limited, and learning materials often assume access to an existing system. General Linux shells do not expose the object-oriented organization, command conventions, job model, or operator experience familiar to OS/400 users.
+Access to legacy AS/400 and OS/400 environments is limited, and learning materials often assume access to an existing system. General Linux shells do not expose the object-oriented organization, command conventions, job model, menu flow, or operator experience familiar to AS/400 users.
 
 An enthusiast needs an accessible environment in which to recall or learn those concepts. A software-development learner also needs a realistic project through which to practise business analysis, decomposition, source control, testing, and release management.
 
 ## 3. Product vision
 
-Provide the most approachable OS/400-inspired learning shell on Linux: nostalgic enough to feel familiar, constrained enough to understand, and engineered well enough to demonstrate professional Rust and product-development practices.
+Provide the most approachable AS/400-inspired learning environment on Linux: nostalgic enough to feel familiar, constrained enough to understand, and engineered well enough to demonstrate professional Rust and product-development practices.
 
 ## 4. Goals and success measures
 
 ### 4.1 Product goals
 
-1. Deliver an interactive shell with a consistent OS/400-inspired command experience.
+1. Deliver a 5250-style interactive experience with a consistent AS/400-inspired command and menu model.
 2. Model a useful subset of libraries, objects, jobs, messages, users, and spooled output.
 3. Keep emulated state isolated from the host system by default.
-4. Make behavior discoverable through built-in help and actionable error messages.
+4. Make behavior discoverable through menus, built-in help, prompting, and actionable error messages.
 5. Build the code as modular Rust components with automated tests and documented architectural decisions.
 6. Maintain requirement-to-release traceability as an educational example.
 7. Teach each emulated OS/400 concept alongside its closest Linux counterpart, including the limits of the comparison.
@@ -44,6 +44,7 @@ Provide the most approachable OS/400-inspired learning shell on Linux: nostalgic
 | Measure | Target for v0.1 MVP |
 |---|---|
 | Supported commands | At least 12 commands across the core workflows |
+| Menu coverage | One main menu plus at least 3 linked task menus or task screens |
 | Critical end-to-end workflows | 100% passing in automated tests |
 | Command parser tests | At least 90% branch coverage for documented syntax |
 | Unhandled crash rate | Zero in the documented happy paths and common invalid-input cases |
@@ -57,7 +58,7 @@ These targets may be revised after a baseline implementation provides reliable m
 
 ### 5.1 Returning operator
 
-A former AS/400 or OS/400 user who wants a familiar command-driven experience for nostalgia, demonstrations, or experimentation.
+A former AS/400 or OS/400 user who wants a familiar menu-driven and command-driven experience for nostalgia, demonstrations, or experimentation.
 
 ### 5.2 Systems learner
 
@@ -76,7 +77,8 @@ A learner practising how product goals become epics, user stories, acceptance cr
 - **Inspired, not compatible:** Preserve recognizable concepts and interaction patterns while documenting intentional differences.
 - **Safe by default:** Emulated actions remain inside an explicitly configured workspace unless a future capability is separately authorized.
 - **Deterministic:** The same state and command should yield the same result.
-- **Discoverable:** Users should be able to learn commands without leaving the shell.
+- **Discoverable:** Users should be able to learn commands and menus without leaving the emulator.
+- **Layered interaction:** The command engine, screen model, and terminal rendering should stay separable so the project can support both full-screen menus and command-driven workflows.
 - **Modular:** Domain logic must not depend directly on terminal rendering or storage details.
 - **Incremental:** Each story should add a small, testable vertical slice.
 - **Traceable:** Requirements, decisions, implementation, and verification should remain linked.
@@ -87,10 +89,13 @@ A learner practising how product goals become epics, user stories, acceptance cr
 
 The MVP will include:
 
-- An interactive read-evaluate-print loop (REPL) and a non-interactive single-command mode.
+- A 5250-style full-screen terminal experience with a main menu, command line, and function-key legend.
+- A command engine that supports interactive command entry from the screen and a non-interactive single-command mode.
 - An OS/400-inspired command parser supporting command names, positional input where documented, and keyword parameters such as `LIB(MYLIB)`.
 - Case-insensitive command and unquoted identifier handling, with normalized stored names.
 - A persistent emulated system stored beneath one configurable Linux workspace directory.
+- A screen model that supports menu titles, selectable numbered options, status areas, footer legends, and a "selection or command" input field.
+- A minimal function-key model for commonly expected actions such as exit, cancel, prompt, refresh, and help.
 - A library list and a basic object catalog.
 - Core operations to create, inspect, list, and remove emulated libraries and selected object types.
 - A simple job identity for each shell session and the ability to display current job information.
@@ -104,20 +109,20 @@ The proposed starter command set is:
 
 | Area | Candidate commands | Purpose |
 |---|---|---|
-| Discovery | `HELP`, `WRKCMD` | Learn and list available commands |
-| Session | `SIGNON`, `SIGNOFF`, `DSPJOB` | Establish and inspect a session/job |
+| Discovery | `HELP`, `WRKCMD`, menu navigation | Learn and list available commands and screens |
+| Session | `SIGNON`, `SIGNOFF`, `DSPJOB`, main menu | Establish and inspect a session/job |
 | Libraries | `CRTLIB`, `DLTLIB`, `DSPLIB`, `WRKLIB`, `ADDLIBLE`, `RMVLIBLE` | Manage libraries and the library list |
 | Objects | `DSPOBJD`, `WRKOBJ`, `DLTOBJ` | Inspect and manage catalogued objects |
 | Messages | `SNDMSG`, `DSPMSG` | Send and inspect local messages |
 | Spooling | `WRKSPLF`, `DSPSPLF` | List and view generated text output |
 | Utility | `DSPSYSVAL`, `HISTORY`, `EXIT` | Inspect the emulator and control the shell |
 
-The exact MVP command list will be finalized during epic decomposition. A command is considered supported only when its syntax, behavior, errors, help, and tests are documented.
+The exact MVP command list will be finalized during epic decomposition. A command or menu path is considered supported only when its syntax or screen behavior, errors, help, and tests are documented.
 
 ### 7.2 Later-release candidates
 
 - Additional CL-like commands and richer prompting.
-- Screen-oriented forms inspired by 5250 workflows.
+- Richer screen-oriented forms inspired by 5250 workflows.
 - More complete subsystem, job queue, and output queue simulation.
 - Data areas, data queues, user spaces, and additional object types.
 - A record-oriented local database abstraction.
@@ -130,7 +135,7 @@ The exact MVP command list will be finalized during epic decomposition. A comman
 - Binary, source, or protocol compatibility with IBM i.
 - Execution or translation of IBM i programs, RPG, COBOL, or licensed CL source.
 - A complete DB2 for i implementation.
-- Full 5250 protocol emulation.
+- Full 5250 network protocol emulation or binary compatibility with IBM terminal sessions.
 - Production workload hosting, high availability, or security certification.
 - Direct mutation of arbitrary host files, users, processes, or system configuration.
 - Pixel-perfect reproduction of proprietary interfaces or distribution of IBM assets.
@@ -142,8 +147,8 @@ The exact MVP command list will be finalized during epic decomposition. A comman
 1. The user starts Rust/400.
 2. The application opens or initializes the configured emulated system.
 3. The user signs on with a local emulator profile or enters a development session.
-4. The shell displays a prompt and concise job/session context.
-5. The user runs `HELP` or `WRKCMD` and receives usable command guidance.
+4. The emulator displays a main menu with a command line, system context, and function-key legend.
+5. The user selects a menu option or enters `HELP` or `WRKCMD` and receives usable guidance.
 
 ### 8.2 Manage libraries and objects
 
@@ -155,9 +160,9 @@ The exact MVP command list will be finalized during epic decomposition. A comman
 
 ### 8.3 Diagnose an invalid command
 
-1. The user enters an unknown command or invalid parameter.
-2. The shell rejects it without changing state.
-3. The shell displays a stable message ID, a plain-language explanation, and corrective guidance.
+1. The user enters an unknown command or invalid parameter from the command line or a promptable screen.
+2. The emulator rejects it without changing state.
+3. The emulator displays a stable message ID, a plain-language explanation, and corrective guidance.
 4. The user can request relevant help and retry.
 
 ### 8.4 Produce and inspect output
@@ -173,7 +178,15 @@ The exact MVP command list will be finalized during epic decomposition. A comman
 3. The process emits human-readable output and a meaningful exit status.
 4. On failure, the report identifies the command and stable message ID.
 
-### 8.6 Learn through comparison
+### 8.6 Navigate by menu
+
+1. The user reaches the main menu after startup or sign-on.
+2. The screen shows numbered options, a system label, a command line, and function-key hints.
+3. The user chooses a numbered option or enters a command directly.
+4. The emulator opens the corresponding menu or task screen and preserves a clear way back.
+5. The user can return, cancel, or request help without losing the session.
+
+### 8.7 Learn through comparison
 
 1. The user encounters an OS/400-inspired command or concept.
 2. The user requests its learning explanation from help or concept documentation.
@@ -239,11 +252,12 @@ Priority uses MoSCoW: Must, Should, Could, Won't for the MVP.
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-001 | The system shall accept commands through an interactive terminal REPL. | Must |
+| FR-001 | The system shall provide an interactive terminal experience with a command line, menu navigation, and a "selection or command" interaction model. | Must |
 | FR-002 | The system shall execute one command or a UTF-8 command script non-interactively. | Must |
 | FR-003 | The parser shall recognize case-insensitive command names and keyword parameters in the documented CL-like syntax. | Must |
 | FR-004 | The parser shall validate required, optional, repeated, mutually exclusive, and invalid parameters according to a command definition. | Must |
 | FR-005 | The system shall expose command definitions to both execution and built-in help so syntax does not drift between them. | Must |
+| FR-005A | The system shall expose menu and screen definitions to rendering and navigation logic so options, labels, and navigation behavior do not drift. | Must |
 | FR-006 | The system shall persist emulator state beneath a configurable workspace and reopen it on the next run. | Must |
 | FR-007 | The system shall create, list, display, and delete emulated libraries, subject to validation and dependency rules. | Must |
 | FR-008 | The system shall maintain an ordered library list for each active session. | Must |
@@ -256,8 +270,10 @@ Priority uses MoSCoW: Must, Should, Could, Won't for the MVP.
 | FR-015 | The system shall create, list, and display text-based spooled files for designated commands. | Must |
 | FR-016 | The system shall record command history with timestamp, session/job identity, normalized command, and outcome; secrets shall be redacted. | Must |
 | FR-017 | The shell shall provide built-in summary and command-specific help. | Must |
+| FR-017A | The emulator shall provide a main menu and at least one subordinate task menu or task screen in the MVP. | Must |
 | FR-018 | The process shall return exit code `0` for successful non-interactive execution and a documented nonzero code for failure. | Must |
 | FR-019 | The system should offer interactive completion for commands and known keyword names. | Should |
+| FR-019A | The emulator should support a documented subset of function-key actions such as Exit, Cancel, Prompt, Refresh, and Help. | Should |
 | FR-020 | The system should support local emulator user profiles and a sign-on flow without claiming host authentication. | Should |
 | FR-021 | The system should provide a dry-run or isolated temporary workspace suitable for demonstrations and tests. | Should |
 | FR-022 | The system could export selected catalog, message, or spooled-output data in a documented interchange format. | Could |
@@ -279,6 +295,7 @@ Priority uses MoSCoW: Must, Should, Could, Won't for the MVP.
 7. A command either completes its intended state transition or leaves persistent state unchanged.
 8. Times are stored in UTC and rendered using configured local-time preferences.
 9. Host paths are never treated as emulated object names and must not be accepted where an object identifier is required.
+10. Menu selections and command entry must coexist without ambiguity; when both are present, the documented screen behavior decides which input takes precedence.
 
 ## 12. Non-functional requirements
 
@@ -314,6 +331,7 @@ Priority uses MoSCoW: Must, Should, Could, Won't for the MVP.
 - Output shall respect non-interactive terminals and provide a `NO_COLOR`-compatible mode.
 - Error messages shall include a stable identifier and corrective action when known.
 - Tables shall have a plain-text rendering suitable for copying and automated tests.
+- The screen model shall have a text-first representation that can be snapshot-tested without requiring a GUI.
 
 ### 12.6 Maintainability and observability
 
@@ -408,6 +426,7 @@ Release planning and dates will be created after epics are estimated. This avoid
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Scope expands toward full IBM i compatibility | MVP never converges | Publish a compatibility statement and require explicit prioritization for every added subsystem |
+| UI scope expands toward pixel-perfect emulation too early | Rendering work overwhelms functional learning value | Keep the MVP target at "recognizably AS/400-like" text rendering and defer protocol-accurate or pixel-perfect reproduction |
 | Historical behavior is remembered differently by contributors | Inconsistent user experience | Maintain command specifications with examples and record intentional deviations |
 | Trademark or proprietary-material concerns | Distribution or community risk | Use original branding/assets, state non-affiliation, and avoid copying proprietary code, screens, or documentation |
 | Host integration escapes the emulator workspace | Data loss or security issue | Deny arbitrary host execution, canonicalize paths, use least privilege, and add adversarial integration tests |
@@ -434,7 +453,7 @@ The following decisions should be resolved through discovery or ADRs before thei
 4. Persistence mechanism: embedded database, files, or a hybrid.
 5. Whether `SIGNON` is required in the default local experience or available as an optional simulation mode.
 6. The first supported object types beyond libraries and generic catalog entries.
-7. Desired terminal style: conventional line-oriented REPL first, or a stronger green-screen presentation.
+7. Desired terminal style: 5250-style green-screen presentation with menu navigation and a command line.
 8. Repository host, work-item identifier format, merge strategy, release cadence, and license.
 9. Whether learning comparisons live only in built-in help or are generated from one source into both the shell and a documentation site.
 10. Which Linux baseline should examples target when distributions use different tools, such as `systemd` versus other init systems.

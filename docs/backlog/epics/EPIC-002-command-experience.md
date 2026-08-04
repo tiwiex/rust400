@@ -2,13 +2,15 @@
 
 ## Outcome
 
-Users can enter structured OS/400-inspired commands, understand their syntax, receive useful results, and recover from mistakes.
+Users can enter structured AS/400-inspired commands from a shared command line, understand their syntax, receive useful results, and recover from mistakes.
+
+This epic now serves the command engine beneath the full-screen experience. Screen layout, menu flow, and function-key behavior should be handled by a dedicated presentation epic so command semantics and terminal rendering can evolve without drifting apart.
 
 ## Stories
 
 ### US-002-01: Run an interactive command loop
 
-**As a** returning operator, **I want** an interactive prompt **so that** I can issue commands in a familiar conversational workflow.
+**As a** returning operator, **I want** an interactive command line within the emulator session **so that** I can issue commands in a familiar workflow alongside menu navigation.
 
 - Requirements: FR-001, FR-012
 - Priority: Must
@@ -16,7 +18,7 @@ Users can enter structured OS/400-inspired commands, understand their syntax, re
 
 Acceptance criteria:
 
-1. Given an initialized workspace, when the application starts interactively, then it displays a prompt and accepts successive commands.
+1. Given an initialized workspace, when the application starts interactively, then it accepts successive commands through the emulator's command-entry path.
 2. `EXIT` and end-of-input close the session cleanly.
 3. Empty input does not fail or mutate state.
 
@@ -51,7 +53,7 @@ Acceptance criteria:
 
 ### US-002-04: Discover commands and help
 
-**As a** systems learner, **I want** summary and command-specific help **so that** I can learn without external documentation.
+**As a** systems learner, **I want** summary and command-specific help **so that** I can learn command behavior without external documentation.
 
 - Requirements: FR-017, FR-019
 - Priority: Must for help; Should for completion
@@ -77,4 +79,3 @@ Acceptance criteria:
 1. Unknown commands and invalid parameters return stable message IDs, severity, cause, and corrective guidance.
 2. Validation failures leave persistent state unchanged.
 3. Expected input errors do not produce an unhandled panic or developer backtrace in normal output.
-
