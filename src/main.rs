@@ -7,7 +7,10 @@ use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
 };
-use rust400::menus::{find_menu, registered_menus, validate_menu_registry};
+use rust400::menus::{
+    FunctionKeyAction, MenuAction, find_footer_hint, find_menu, find_option, registered_menus,
+    validate_menu_registry,
+};
 use rust400::parser::parse_command;
 use rust400::ui::{INPUT_PROMPT, MenuScreen, render_menu};
 use rust400::workspace::Workspace;
@@ -78,26 +81,19 @@ fn run_interactive_session(
     }
 }
 
-fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
-    let screen = MenuScreen {
-        menu,
-        system_name: "RUST400",
-        current_user: "MW",
-        job_name: "QPADEV0001",
-    };
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ScreenState {
+    MainMenu,
+}
 
-    write!(output, "{}", render_menu(&screen))?;
-    writeln!(output, "  Workspace: {}", workspace.root().display())?;
-    writeln!(
-        output,
-        "  Enter EXIT in the command line to end the session."
-    )?;
-    Ok(())
+fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
+    render_active_screen(output, workspace, ScreenState::MainMenu)
 }
 
 fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result<()> {
     let mut line = String::new();
+    let mut current_screen = ScreenState::MainMenu;
+    let mut last_direct_input: Option<String> = None;
 
     loop {
         write!(output, "  {INPUT_PROMPT}")?;
@@ -115,6 +111,26 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
         if command.is_empty() {
             continue;
         }
+
+        if let Some(result) = try_function_key(command, &mut last_direct_input, output)? {
+            match result {
+                FunctionKeyResult::Continue => continue,
+                FunctionKeyResult::Exit => return Ok(()),
+            }
+        }
+
+        if let Some(result) = try_menu_selection(command, current_screen, output)? {
+            match result {
+                MenuSelectionResult::Continue => continue,
+                MenuSelectionResult::Render(screen) => {
+                    current_screen = screen;
+                    continue;
+                }
+                MenuSelectionResult::Exit => return Ok(()),
+            }
+        }
+
+        last_direct_input = Some(command.to_string());
 
         match parse_command(command) {
             Ok(parsed) => {
@@ -197,6 +213,163 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
     }
 }
 
+fn render_active_screen(
+    output: &mut impl Write,
+    workspace: &Workspace,
+    screen_state: ScreenState,
+) -> io::Result<()> {
+    match screen_state {
+        ScreenState::MainMenu => {
+            let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+            let screen = MenuScreen {
+                menu,
+                system_name: "RUST400",
+                current_user: "MW",
+                job_name: "QPADEV0001",
+            };
+
+            write!(output, "{}", render_menu(&screen))?;
+            writeln!(output, "  Workspace: {}", workspace.root().display())?;
+            writeln!(
+                output,
+                "  Enter EXIT in the command line to end the session."
+            )?;
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum MenuSelectionResult {
+    Continue,
+    Render(ScreenState),
+    Exit,
+}
+
+fn try_menu_selection(
+    input: &str,
+    current_screen: ScreenState,
+    output: &mut impl Write,
+) -> io::Result<Option<MenuSelectionResult>> {
+    let ScreenState::MainMenu = current_screen;
+    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+
+    if let Some(option) = find_option(menu, input) {
+        return Ok(Some(match option.action {
+            MenuAction::RunCommand("EXIT") => {
+                writeln!(output, "Menu selection 90 -> Sign off")?;
+                writeln!(output, "Session ended.")?;
+                MenuSelectionResult::Exit
+            }
+            MenuAction::RunCommand(command_name) => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {} maps to command '{}'.",
+                    option.selector, option.label, command_name
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::OpenMenu(target_menu) => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {} would open menu '{}'. Returning to MAIN until that menu is implemented.",
+                    option.selector, option.label, target_menu
+                )?;
+                MenuSelectionResult::Render(ScreenState::MainMenu)
+            }
+        }));
+    }
+
+    if input.chars().all(|character| character.is_ascii_digit()) {
+        writeln!(
+            output,
+            "Selection '{input}' is not valid on menu {}.",
+            menu.id
+        )?;
+        return Ok(Some(MenuSelectionResult::Continue));
+    }
+
+    Ok(None)
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum FunctionKeyResult {
+    Continue,
+    Exit,
+}
+
+fn try_function_key(
+    input: &str,
+    last_direct_input: &mut Option<String>,
+    output: &mut impl Write,
+) -> io::Result<Option<FunctionKeyResult>> {
+    if !looks_like_function_key(input) {
+        return Ok(None);
+    }
+
+    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+    let Some(hint) = find_footer_hint(menu, input) else {
+        writeln!(
+            output,
+            "Function key '{input}' is not supported on menu {}.",
+            menu.id
+        )?;
+        return Ok(Some(FunctionKeyResult::Continue));
+    };
+
+    Ok(Some(match hint.action {
+        FunctionKeyAction::Exit => {
+            writeln!(output, "Function key F3 -> Exit")?;
+            writeln!(output, "Session ended.")?;
+            FunctionKeyResult::Exit
+        }
+        FunctionKeyAction::Prompt => {
+            writeln!(
+                output,
+                "Function key F4 -> Prompt. Type a command such as HELP, CRTLIB LIB(MYLIB), or 90."
+            )?;
+            FunctionKeyResult::Continue
+        }
+        FunctionKeyAction::Retrieve => {
+            if let Some(previous) = last_direct_input.as_deref() {
+                writeln!(output, "Function key F9 -> Retrieve '{previous}'")?;
+            } else {
+                writeln!(
+                    output,
+                    "Function key F9 -> No previous command or selection to retrieve."
+                )?;
+            }
+            FunctionKeyResult::Continue
+        }
+        FunctionKeyAction::Cancel => {
+            writeln!(output, "Function key F12 -> Cancel and remain on MAIN.")?;
+            FunctionKeyResult::Continue
+        }
+        FunctionKeyAction::Help => {
+            writeln!(
+                output,
+                "Function key F13 -> Information Assistant. Use HELP for command help or choose a menu option."
+            )?;
+            FunctionKeyResult::Continue
+        }
+        FunctionKeyAction::SetInitialMenu => {
+            writeln!(
+                output,
+                "Function key F23 -> Set initial menu is not implemented yet."
+            )?;
+            FunctionKeyResult::Continue
+        }
+    }))
+}
+
+fn looks_like_function_key(input: &str) -> bool {
+    let Some(stripped) = input.strip_prefix(['F', 'f']) else {
+        return false;
+    };
+
+    !stripped.is_empty() && stripped.chars().all(|character| character.is_ascii_digit())
+}
+
 #[derive(Debug, Eq, PartialEq)]
 enum Mode {
     Permanent(PathBuf),
@@ -221,7 +394,8 @@ mod tests {
     use std::path::PathBuf;
 
     use rust400::menus::{
-        FooterHint, MenuAction, MenuDefinition, MenuOption, validate_menu_registry,
+        FooterHint, FunctionKeyAction, MenuAction, MenuDefinition, MenuOption,
+        validate_menu_registry,
     };
     use rust400::workspace::Workspace;
 
@@ -314,6 +488,7 @@ mod tests {
             footer_hints: &[FooterHint {
                 key: "F3",
                 label: "Exit",
+                action: FunctionKeyAction::Exit,
             }],
         }];
 
@@ -379,5 +554,118 @@ mod tests {
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Command 'CRTLIB' is mapped to handler CreateLibrary"));
         assert!(transcript.contains("library 'MYLIB'"));
+    }
+
+    #[test]
+    fn numeric_main_menu_selection_is_handled_from_menu_metadata() {
+        let mut input = Cursor::new("1\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Menu selection 1 -> User tasks would open menu 'USR'."));
+    }
+
+    #[test]
+    fn invalid_numeric_selection_reports_menu_specific_error() {
+        let mut input = Cursor::new("77\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Selection '77' is not valid on menu MAIN."));
+    }
+
+    #[test]
+    fn direct_commands_still_work_from_the_main_menu_input_field() {
+        let mut input = Cursor::new("help cmd(crtlib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Command: CRTLIB"));
+        assert!(transcript.contains("Summary: Create an emulated library definition."));
+    }
+
+    #[test]
+    fn sign_off_selection_exits_consistently_from_the_menu() {
+        let mut input = Cursor::new("90\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Menu selection 90 -> Sign off"));
+        assert!(transcript.contains("Session ended."));
+    }
+
+    #[test]
+    fn function_key_f3_exits_the_session() {
+        let mut input = Cursor::new("F3\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key F3 -> Exit"));
+        assert!(transcript.contains("Session ended."));
+    }
+
+    #[test]
+    fn function_key_f4_prompts_for_supported_input() {
+        let mut input = Cursor::new("F4\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key F4 -> Prompt."));
+    }
+
+    #[test]
+    fn function_key_f9_retrieves_the_previous_direct_input() {
+        let mut input = Cursor::new("help\nF9\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key F9 -> Retrieve 'help'"));
+    }
+
+    #[test]
+    fn function_key_f12_cancels_gracefully() {
+        let mut input = Cursor::new("F12\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key F12 -> Cancel and remain on MAIN."));
+    }
+
+    #[test]
+    fn function_key_f13_offers_information_assistant_guidance() {
+        let mut input = Cursor::new("F13\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key F13 -> Information Assistant."));
+    }
+
+    #[test]
+    fn unsupported_function_key_fails_gracefully() {
+        let mut input = Cursor::new("F5\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Function key 'F5' is not supported on menu MAIN."));
     }
 }

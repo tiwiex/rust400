@@ -4,6 +4,8 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-04 | [Mix menu selection with direct commands](2026-08-04-us-008-04-mix-menu-selection-and-direct-commands.md) | `US-008-04` | Verified |
+| 2026-08-04 | [Support function-key actions](2026-08-04-us-008-03-support-function-key-actions.md) | `US-008-03` | Verified |
 | 2026-08-04 | [Define menu screens from shared metadata](2026-08-04-us-008-02-shared-menu-metadata.md) | `US-008-02` | Verified |
 | 2026-08-04 | [Render a full-screen main menu](2026-08-04-us-008-01-render-full-screen-main-menu.md) | `US-008-01` | Verified |
 | 2026-08-04 | [Correct product direction toward AS/400-style operator interface](2026-08-04-product-direction-correction-as400-operator-interface.md) | Product scope correction | Verified |
