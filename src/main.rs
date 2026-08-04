@@ -7,8 +7,9 @@ use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
 };
+use rust400::menus::{find_menu, registered_menus, validate_menu_registry};
 use rust400::parser::parse_command;
-use rust400::ui::{INPUT_PROMPT, MainMenuScreen, render_main_menu};
+use rust400::ui::{INPUT_PROMPT, MenuScreen, render_menu};
 use rust400::workspace::Workspace;
 
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
@@ -16,6 +17,11 @@ const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-w
 fn main() -> ExitCode {
     if let Err(error) = validate_registry_metadata(registered_commands()) {
         eprintln!("Could not start Rust/400: invalid command metadata: {error}");
+        return ExitCode::FAILURE;
+    }
+
+    if let Err(error) = validate_menu_registry(registered_menus()) {
+        eprintln!("Could not start Rust/400: invalid menu metadata: {error}");
         return ExitCode::FAILURE;
     }
 
@@ -73,14 +79,15 @@ fn run_interactive_session(
 }
 
 fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    let screen = MainMenuScreen {
+    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+    let screen = MenuScreen {
+        menu,
         system_name: "RUST400",
         current_user: "MW",
         job_name: "QPADEV0001",
-        menu_id: "MAIN",
     };
 
-    write!(output, "{}", render_main_menu(&screen))?;
+    write!(output, "{}", render_menu(&screen))?;
     writeln!(output, "  Workspace: {}", workspace.root().display())?;
     writeln!(
         output,
@@ -213,6 +220,9 @@ mod tests {
     use std::io::Cursor;
     use std::path::PathBuf;
 
+    use rust400::menus::{
+        FooterHint, MenuAction, MenuDefinition, MenuOption, validate_menu_registry,
+    };
     use rust400::workspace::Workspace;
 
     use super::{Mode, command_loop, parse_mode, run_interactive_session};
@@ -287,6 +297,30 @@ mod tests {
         assert!(transcript.contains("Workspace: "));
         assert!(transcript.contains("Enter EXIT in the command line to end the session."));
         assert!(transcript.contains("Session ended."));
+    }
+
+    #[test]
+    fn startup_fails_if_shared_menu_metadata_is_invalid() {
+        let invalid = [MenuDefinition {
+            id: "BROKEN",
+            title: "",
+            prompt_label: "Selection or command",
+            system_label: "System",
+            options: &[MenuOption {
+                selector: "1",
+                label: "Anything",
+                action: MenuAction::OpenMenu("NEXT"),
+            }],
+            footer_hints: &[FooterHint {
+                key: "F3",
+                label: "Exit",
+            }],
+        }];
+
+        assert_eq!(
+            validate_menu_registry(&invalid),
+            Err("registered menu is missing a title")
+        );
     }
 
     #[test]

@@ -16,6 +16,8 @@ The latest UI story now renders a text-mode main menu layout with:
 - a `Selection or command` input line
 - a footer legend with function-key hints
 
+The menu content is now driven by shared menu metadata rather than being hard-coded directly inside the renderer. That means labels, options, and footer hints can be validated and reused by both rendering and future navigation logic.
+
 ## Prerequisites
 
 - A current 64-bit Linux environment

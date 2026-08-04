@@ -1,49 +1,51 @@
 use std::fmt::Write as _;
 
+use crate::menus::MenuDefinition;
+
 pub const INPUT_PROMPT: &str = "===> ";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MainMenuScreen<'a> {
+pub struct MenuScreen<'a> {
+    pub menu: &'a MenuDefinition,
     pub system_name: &'a str,
     pub current_user: &'a str,
     pub job_name: &'a str,
-    pub menu_id: &'a str,
 }
 
-pub fn render_main_menu(screen: &MainMenuScreen<'_>) -> String {
+pub fn render_menu(screen: &MenuScreen<'_>) -> String {
     const WIDTH: usize = 78;
 
     let mut output = String::new();
-    let title = "IBM i Main Menu";
-    let system_line = format!("System: {}", screen.system_name);
+    let system_line = format!("{}: {}", screen.menu.system_label, screen.system_name);
 
     writeln!(&mut output, "{}", " ".repeat(WIDTH)).expect("write should succeed");
     writeln!(
         &mut output,
         "{}{}",
-        pad_right(screen.menu_id, 12),
-        center_with_right(title, &system_line, WIDTH - 12)
+        pad_right(screen.menu.id, 12),
+        center_with_right(screen.menu.title, &system_line, WIDTH - 12)
     )
     .expect("write should succeed");
     writeln!(&mut output).expect("write should succeed");
     writeln!(&mut output, "  Select one of the following:").expect("write should succeed");
     writeln!(&mut output).expect("write should succeed");
 
-    for option in menu_options() {
-        writeln!(&mut output, "     {option}").expect("write should succeed");
+    for option in screen.menu.options {
+        writeln!(&mut output, "     {}. {}", option.selector, option.label)
+            .expect("write should succeed");
     }
 
     writeln!(&mut output).expect("write should succeed");
-    writeln!(&mut output, "  Selection or command").expect("write should succeed");
+    writeln!(&mut output, "  {}", screen.menu.prompt_label).expect("write should succeed");
     writeln!(&mut output, "  {INPUT_PROMPT}").expect("write should succeed");
     writeln!(&mut output, "  {}", "-".repeat(WIDTH.saturating_sub(2)))
         .expect("write should succeed");
     writeln!(
         &mut output,
-        "  F3=Exit   F4=Prompt   F9=Retrieve   F12=Cancel   F13=Information Assistant"
+        "  {}",
+        render_footer_hints(screen.menu.footer_hints)
     )
     .expect("write should succeed");
-    writeln!(&mut output, "  F23=Set initial menu").expect("write should succeed");
     writeln!(&mut output).expect("write should succeed");
     writeln!(
         &mut output,
@@ -53,24 +55,6 @@ pub fn render_main_menu(screen: &MainMenuScreen<'_>) -> String {
     .expect("write should succeed");
 
     output
-}
-
-fn menu_options() -> &'static [&'static str] {
-    &[
-        "1. User tasks",
-        "2. Office tasks",
-        "3. General system tasks",
-        "4. Files, libraries, and folders",
-        "5. Programming",
-        "6. Communications",
-        "7. Define or change the system",
-        "8. Problem handling",
-        "9. Display a menu",
-        "10. Information Assistant options",
-        "11. IBM i Access tasks",
-        "",
-        "90. Sign off",
-    ]
 }
 
 fn pad_right(text: &str, width: usize) -> String {
@@ -101,20 +85,43 @@ fn center_with_right(title: &str, right_text: &str, width: usize) -> String {
     chars.into_iter().collect()
 }
 
+fn render_footer_hints(hints: &[crate::menus::FooterHint]) -> String {
+    let mut first_row = Vec::new();
+    let mut second_row = Vec::new();
+
+    for (index, hint) in hints.iter().enumerate() {
+        let formatted = format!("{}={}", hint.key, hint.label);
+
+        if index < 5 {
+            first_row.push(formatted);
+        } else {
+            second_row.push(formatted);
+        }
+    }
+
+    if second_row.is_empty() {
+        first_row.join("   ")
+    } else {
+        format!("{}\n  {}", first_row.join("   "), second_row.join("   "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{INPUT_PROMPT, MainMenuScreen, render_main_menu};
+    use crate::menus::find_menu;
+
+    use super::{INPUT_PROMPT, MenuScreen, render_menu};
 
     #[test]
     fn main_menu_contains_expected_layout_regions() {
-        let screen = MainMenuScreen {
+        let screen = MenuScreen {
+            menu: find_menu("MAIN").expect("MAIN menu should exist"),
             system_name: "NCRHEDEV",
             current_user: "MW",
             job_name: "QPADEV0001",
-            menu_id: "MAIN",
         };
 
-        let rendered = render_main_menu(&screen);
+        let rendered = render_menu(&screen);
 
         assert!(rendered.contains("MAIN"));
         assert!(rendered.contains("IBM i Main Menu"));
@@ -132,14 +139,14 @@ mod tests {
 
     #[test]
     fn main_menu_matches_the_snapshot_layout() {
-        let screen = MainMenuScreen {
+        let screen = MenuScreen {
+            menu: find_menu("MAIN").expect("MAIN menu should exist"),
             system_name: "NCRHEDEV",
             current_user: "MW",
             job_name: "QPADEV0001",
-            menu_id: "MAIN",
         };
 
-        let rendered = render_main_menu(&screen);
+        let rendered = render_menu(&screen);
 
         let expected = [
             "                                                                              ",
@@ -158,7 +165,6 @@ mod tests {
             "     9. Display a menu",
             "     10. Information Assistant options",
             "     11. IBM i Access tasks",
-            "     ",
             "     90. Sign off",
             "",
             "  Selection or command",
