@@ -6,7 +6,7 @@ Rust/400 is not affiliated with IBM and is not an IBM i replacement or binary-co
 
 ## Current status
 
-The project initializes an isolated permanent or disposable workspace and starts an interactive shell loop. `EXIT` and end-of-input close the session cleanly. Blank input is ignored. The shell now parses CL-like command input with case-insensitive command and parameter names, quoted values, whitespace tolerance, and placeholder validation for required, duplicate, unknown, and mutually exclusive parameters.
+The project initializes an isolated permanent or disposable workspace and starts an interactive shell loop. `EXIT` and end-of-input close the session cleanly. Blank input is ignored. The shell now uses shared command metadata to drive validation, command-specific help, and typed handler requests from one registry.
 
 ## Prerequisites
 
@@ -34,8 +34,15 @@ R400>
 Example parser behavior today:
 
 ```text
+R400> help cmd(crtlib)
+Command: CRTLIB
+Summary: Create an emulated library definition.
+Parameters:
+- LIB (required): Names the library to create.
+- TEXT (optional): Supplies a descriptive text for the library.
+Handler: CreateLibrary
 R400> crtlib lib(mylib) text('Learning library')
-Command 'CRTLIB' parsed successfully, but execution is not available yet.
+Command 'CRTLIB' is mapped to handler CreateLibrary for library 'MYLIB' with text 'Learning library'.
 R400> crtlib text('Missing required LIB')
 Validation error: missing required parameter LIB
 R400> crtlib lib(

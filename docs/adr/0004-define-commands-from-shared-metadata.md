@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Proposed — decision pending |
+| Status | Accepted |
 | Date | 2026-08-04 |
 | Owners | Project owner |
 | Related requirements | `FR-003`, `FR-004`, `FR-005`, `FR-017`, `FR-019` |
@@ -38,7 +38,17 @@ One declaration could generate parser/help wiring, but macro complexity may obsc
 
 ## Decision
 
-The shared-source principle from `FR-005` is already required, but its concrete representation is not accepted yet. Before `US-002-03` implementation begins, build a small vertical prototype covering one command's definition, validation, help, and typed handler request. Compare static typed definitions with a minimal declarative representation and obtain owner approval.
+Adopt typed static Rust command definitions as the shared metadata source for the MVP. Each command definition records its name, summary, parameter metadata, validation rules, and handler identity in code. Validation, command-specific help, registry checks, and typed request-building all consume that same definition.
+
+The prototype demonstrated the approach with `CRTLIB` end to end:
+
+- parser output resolves the command name;
+- shared metadata defines `LIB` and `TEXT`;
+- validation consumes the same definition;
+- help renders from the same definition; and
+- a typed `CreateLibraryRequest` is built for the handler path.
+
+This keeps the design explicit and easy to navigate for learners while satisfying the non-drift goal in `FR-005`.
 
 ## Consequences
 
@@ -49,18 +59,19 @@ The shared-source principle from `FR-005` is already required, but its concrete 
 
 ### Negative
 
-- `US-002-03` cannot merge until this ADR is accepted.
+- Adding or changing commands requires a code change and recompilation.
+- Help text and examples remain code-owned until a later design proves a declarative layer is worth the complexity.
 
 ### Neutral or follow-up
 
-- `US-002-02` parser work may explore syntax, but must avoid locking command metadata into an unapproved representation.
-- Learning concept content may remain separate from executable command metadata if linked and validated from one source later.
+- `US-002-04` can now expand help and discovery on top of the accepted registry rather than inventing a second metadata source.
+- Learning concept content may still remain separate from executable command metadata if linked and validated from one source later.
 
 ## Verification
 
-- The accepted revision must show one end-to-end command example.
+- `CRTLIB` must remain covered by an end-to-end test from parsed syntax to typed request.
 - Tests must prove validation and help consume the same command definition.
-- `US-002-03` cannot merge while this ADR remains Proposed.
+- Registry tests must fail when required command documentation metadata is missing.
 
 ## References
 
@@ -70,4 +81,4 @@ The shared-source principle from `FR-005` is already required, but its concrete 
 ## Amendment history
 
 - 2026-08-04: Initial proposal; representation intentionally deferred pending a vertical prototype.
-
+- 2026-08-04: Accepted typed static Rust definitions after a working `CRTLIB` prototype proved shared validation, help, metadata checks, and typed request-building.

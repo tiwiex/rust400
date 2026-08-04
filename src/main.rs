@@ -3,16 +3,23 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use rust400::parser::{CommandValidation, parse_command, validate_command};
+use rust400::commands::{
+    CommandRequest, build_request, find_command, registered_commands, render_help,
+    validate_registry_metadata,
+};
+use rust400::parser::parse_command;
 use rust400::workspace::Workspace;
 
 const STARTUP_MESSAGE: &str = "Rust/400 interactive shell: initialization complete.";
 const PROMPT: &str = "R400> ";
-const EXIT_COMMAND: &str = "EXIT";
-const HELP_COMMAND: &str = "HELP";
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
 
 fn main() -> ExitCode {
+    if let Err(error) = validate_registry_metadata(registered_commands()) {
+        eprintln!("Could not start Rust/400: invalid command metadata: {error}");
+        return ExitCode::FAILURE;
+    }
+
     match parse_mode(env::args_os().skip(1)) {
         Ok(Mode::Permanent(path)) => start_permanent(path),
         Ok(Mode::Temporary) => start_temporary(),
@@ -71,7 +78,7 @@ fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<(
     writeln!(output, "Workspace: {}", workspace.root().display())?;
     writeln!(
         output,
-        "Type {EXIT_COMMAND} to end the session. Additional commands will arrive in later stories."
+        "Type EXIT to end the session. Additional commands will arrive in later stories."
     )?;
     Ok(())
 }
@@ -96,72 +103,84 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
             continue;
         }
 
-        if command.eq_ignore_ascii_case(EXIT_COMMAND) {
-            writeln!(output, "Session ended.")?;
-            return Ok(());
-        }
-
         match parse_command(command) {
             Ok(parsed) => {
-                if parsed.name == EXIT_COMMAND {
-                    writeln!(output, "Session ended.")?;
-                    return Ok(());
-                }
-
-                if parsed.name == HELP_COMMAND && parsed.parameters.is_empty() {
+                let Some(definition) = find_command(&parsed.name) else {
                     writeln!(
                         output,
-                        "Available commands are still limited. Use EXIT to close the session."
+                        "Command '{}' is not registered yet. Use HELP for available commands.",
+                        parsed.name
                     )?;
                     continue;
+                };
+
+                match build_request(&parsed, definition) {
+                    Ok(CommandRequest::Exit) => {
+                        writeln!(output, "Session ended.")?;
+                        return Ok(());
+                    }
+                    Ok(CommandRequest::Help(request)) => {
+                        if let Some(command_name) = request.command {
+                            if let Some(help_definition) = find_command(&command_name) {
+                                writeln!(output, "{}", render_help(help_definition))?;
+                            } else {
+                                writeln!(
+                                    output,
+                                    "Command '{command_name}' is not registered yet."
+                                )?;
+                            }
+                        } else {
+                            writeln!(
+                                output,
+                                "Available commands: {}",
+                                registered_commands()
+                                    .iter()
+                                    .map(|definition| definition.name)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )?;
+                        }
+                    }
+                    Ok(CommandRequest::CreateLibrary(request)) => {
+                        writeln!(
+                            output,
+                            "Command 'CRTLIB' is mapped to handler {:?} for library '{}'{}.",
+                            definition.handler,
+                            request.library,
+                            request
+                                .text
+                                .as_ref()
+                                .map(|text| format!(" with text '{}'", text))
+                                .unwrap_or_default()
+                        )?;
+                    }
+                    Ok(CommandRequest::SendMessage(request)) => {
+                        writeln!(
+                            output,
+                            "Command 'SNDMSG' is mapped to handler {:?} with message '{}' and {} recipient(s).",
+                            definition.handler,
+                            request.message,
+                            request.recipients.len()
+                        )?;
+                    }
+                    Ok(CommandRequest::WorkObject(request)) => {
+                        writeln!(
+                            output,
+                            "Command 'WRKOBJ' is mapped to handler {:?} with LIB({}) OBJ({}).",
+                            definition.handler,
+                            request.library.as_deref().unwrap_or("*NONE"),
+                            request.object.as_deref().unwrap_or("*NONE")
+                        )?;
+                    }
+                    Err(error) => {
+                        writeln!(output, "Validation error: {error}")?;
+                    }
                 }
-
-                let validation = placeholder_validation_for(&parsed.name);
-
-                if let Err(error) = validate_command(&parsed, &validation) {
-                    writeln!(output, "Validation error: {error}")?;
-                    continue;
-                }
-
-                writeln!(
-                    output,
-                    "Command '{}' parsed successfully, but execution is not available yet.",
-                    parsed.name
-                )?;
             }
             Err(error) => {
                 writeln!(output, "Syntax error: {error}")?;
             }
         }
-    }
-}
-
-fn placeholder_validation_for(command_name: &str) -> CommandValidation {
-    match command_name {
-        "CRTLIB" => CommandValidation {
-            required_parameters: vec!["LIB"],
-            optional_parameters: vec!["TEXT"],
-            repeated_parameters: Vec::new(),
-            mutually_exclusive_pairs: Vec::new(),
-        },
-        "SNDMSG" => CommandValidation {
-            required_parameters: vec!["MSG"],
-            optional_parameters: vec!["TO"],
-            repeated_parameters: vec!["TO"],
-            mutually_exclusive_pairs: Vec::new(),
-        },
-        "WRKOBJ" => CommandValidation {
-            required_parameters: Vec::new(),
-            optional_parameters: vec!["LIB", "OBJ"],
-            repeated_parameters: Vec::new(),
-            mutually_exclusive_pairs: vec![("LIB", "OBJ")],
-        },
-        _ => CommandValidation {
-            required_parameters: Vec::new(),
-            optional_parameters: Vec::new(),
-            repeated_parameters: Vec::new(),
-            mutually_exclusive_pairs: Vec::new(),
-        },
     }
 }
 
@@ -190,10 +209,7 @@ mod tests {
 
     use rust400::workspace::Workspace;
 
-    use super::{
-        EXIT_COMMAND, Mode, PROMPT, STARTUP_MESSAGE, command_loop, parse_mode,
-        run_interactive_session,
-    };
+    use super::{Mode, PROMPT, STARTUP_MESSAGE, command_loop, parse_mode, run_interactive_session};
 
     #[test]
     fn startup_message_identifies_the_interactive_shell() {
@@ -269,19 +285,32 @@ mod tests {
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains(STARTUP_MESSAGE));
         assert!(transcript.contains("Workspace: "));
-        assert!(transcript.contains(&format!("Type {EXIT_COMMAND} to end the session.")));
+        assert!(transcript.contains("Type EXIT to end the session."));
         assert!(transcript.contains("Session ended."));
     }
 
     #[test]
-    fn recognized_syntax_is_parsed_before_execution_exists() {
-        let mut input = Cursor::new("crtlib lib(mylib)\nEXIT\n");
+    fn help_lists_registered_commands_from_shared_metadata() {
+        let mut input = Cursor::new("help\nEXIT\n");
         let mut output = Vec::new();
 
         command_loop(&mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.contains("Command 'CRTLIB' parsed successfully"));
+        assert!(transcript.contains("Available commands: EXIT, HELP, CRTLIB, SNDMSG, WRKOBJ"));
+    }
+
+    #[test]
+    fn command_specific_help_comes_from_the_same_metadata_as_validation() {
+        let mut input = Cursor::new("help cmd(crtlib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Command: CRTLIB"));
+        assert!(transcript.contains("Summary: Create an emulated library definition."));
+        assert!(transcript.contains("- LIB (required): Names the library to create."));
     }
 
     #[test]
@@ -304,5 +333,17 @@ mod tests {
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Validation error: missing required parameter LIB"));
+    }
+
+    #[test]
+    fn shared_metadata_builds_a_typed_command_request_for_crtlib() {
+        let mut input = Cursor::new("crtlib lib(mylib) text('Learning library')\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Command 'CRTLIB' is mapped to handler CreateLibrary"));
+        assert!(transcript.contains("library 'MYLIB'"));
     }
 }
