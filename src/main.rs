@@ -13,6 +13,7 @@ use rust400::menus::{
     validate_menu_registry,
 };
 use rust400::parser::parse_command;
+use rust400::session::SessionContext;
 use rust400::ui::{INPUT_PROMPT, MenuScreen, render_green_screen};
 use rust400::workspace::Workspace;
 
@@ -68,12 +69,14 @@ fn run_interactive_session(
     mut input: impl BufRead,
     mut output: impl Write,
 ) -> ExitCode {
-    if let Err(error) = write_startup(&mut output, workspace) {
+    let session = SessionContext::new();
+
+    if let Err(error) = write_startup(&mut output, workspace, &session) {
         eprintln!("Could not start Rust/400: {error}");
         return ExitCode::FAILURE;
     }
 
-    match command_loop(workspace, &mut input, &mut output) {
+    match command_loop_with_session(workspace, &session, &mut input, &mut output) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("Could not continue Rust/400: {error}");
@@ -82,12 +85,27 @@ fn run_interactive_session(
     }
 }
 
-fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    render_active_screen(output, workspace, "MAIN")
+fn write_startup(
+    output: &mut impl Write,
+    workspace: &Workspace,
+    session: &SessionContext,
+) -> io::Result<()> {
+    render_active_screen(output, workspace, session, "MAIN")
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn command_loop(
     workspace: &Workspace,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    let session = SessionContext::new();
+    command_loop_with_session(workspace, &session, input, output)
+}
+
+fn command_loop_with_session(
+    workspace: &Workspace,
+    session: &SessionContext,
     input: &mut impl BufRead,
     output: &mut impl Write,
 ) -> io::Result<()> {
@@ -126,7 +144,7 @@ fn command_loop(
                 MenuSelectionResult::Continue => continue,
                 MenuSelectionResult::Render(menu_id) => {
                     current_menu = menu_id;
-                    render_active_screen(output, workspace, current_menu)?;
+                    render_active_screen(output, workspace, session, current_menu)?;
                     continue;
                 }
                 MenuSelectionResult::Exit => return Ok(()),
@@ -210,6 +228,22 @@ fn command_loop(
                             Err(error) => writeln!(output, "{error}")?,
                         }
                     }
+                    Ok(CommandRequest::DisplayJob) => {
+                        writeln!(output, "Job: {}", session.job_name())?;
+                        writeln!(output, "User: {}", session.current_user())?;
+                        writeln!(output, "Status: {}", session.status())?;
+                        writeln!(output, "Started: {}", session.started_at_epoch_seconds())?;
+                        writeln!(output, "Workspace: {}", workspace.root().display())?;
+                    }
+                    Ok(CommandRequest::DisplayUserProfile) => {
+                        writeln!(output, "User profile: {}", session.current_user())?;
+                        writeln!(output, "Profile status: ENABLED")?;
+                        writeln!(output, "Current job: {}", session.job_name())?;
+                        writeln!(
+                            output,
+                            "Linux analogy: similar to the signed-in shell user, but contained inside Rust/400."
+                        )?;
+                    }
                     Ok(CommandRequest::SendMessage(request)) => {
                         writeln!(
                             output,
@@ -251,14 +285,15 @@ fn command_loop(
 fn render_active_screen(
     output: &mut impl Write,
     workspace: &Workspace,
+    session: &SessionContext,
     menu_id: &str,
 ) -> io::Result<()> {
     let menu = find_menu(menu_id).expect("validated registry should contain rendered menu");
     let screen = MenuScreen {
         menu,
         system_name: "RUST400",
-        current_user: "MW",
-        job_name: "QPADEV0001",
+        current_user: session.current_user(),
+        job_name: session.job_name(),
     };
 
     write!(output, "{}", render_green_screen(&screen))?;
@@ -299,6 +334,22 @@ fn try_menu_selection(
                 writeln!(
                     output,
                     "Menu selection {} -> {}. Type DSPLIB LIB(name) to inspect one library.",
+                    option.selector, option.label
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::RunCommand("DSPJOB") => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}. Type DSPJOB to inspect the current session job.",
+                    option.selector, option.label
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::RunCommand("DSPUSRPRF") => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}. Type DSPUSRPRF to inspect the current Rust/400 profile.",
                     option.selector, option.label
                 )?;
                 MenuSelectionResult::Continue
@@ -601,9 +652,9 @@ mod tests {
         command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(
-            transcript.contains("Available commands: EXIT, HELP, CRTLIB, DSPLIB, SNDMSG, WRKOBJ")
-        );
+        assert!(transcript.contains(
+            "Available commands: EXIT, HELP, CRTLIB, DSPLIB, DSPJOB, DSPUSRPRF, SNDMSG, WRKOBJ"
+        ));
     }
 
     #[test]
@@ -751,15 +802,45 @@ mod tests {
     #[test]
     fn user_tasks_menu_offers_command_guidance() {
         let workspace = Workspace::temporary().expect("temporary workspace should exist");
-        let mut input = Cursor::new("1\n2\n90\nEXIT\n");
+        let mut input = Cursor::new("1\n1\n2\n90\nEXIT\n");
         let mut output = Vec::new();
 
         command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("User Tasks"));
-        assert!(transcript.contains("Type SNDMSG MSG('Hello') TO(QSYSOPR)."));
+        assert!(transcript.contains("Type DSPUSRPRF to inspect the current Rust/400 profile."));
+        assert!(transcript.contains("Type DSPJOB to inspect the current session job."));
         assert!(transcript.contains("Return to main menu"));
+    }
+
+    #[test]
+    fn dspjob_shows_current_session_identity() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("dspjob\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Job: "));
+        assert!(transcript.contains("User: "));
+        assert!(transcript.contains("Status: ACTIVE"));
+        assert!(transcript.contains("Started: "));
+    }
+
+    #[test]
+    fn dspusrprf_shows_current_profile_details() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("dspusrprf\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("User profile: "));
+        assert!(transcript.contains("Profile status: ENABLED"));
+        assert!(transcript.contains("Linux analogy:"));
     }
 
     #[test]
