@@ -7,12 +7,13 @@ use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
 };
+use rust400::libraries::{create_library, find_library};
 use rust400::menus::{
     FunctionKeyAction, MenuAction, find_footer_hint, find_menu, find_option, registered_menus,
     validate_menu_registry,
 };
 use rust400::parser::parse_command;
-use rust400::ui::{INPUT_PROMPT, MenuScreen, render_menu};
+use rust400::ui::{INPUT_PROMPT, MenuScreen, render_green_screen};
 use rust400::workspace::Workspace;
 
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
@@ -72,7 +73,7 @@ fn run_interactive_session(
         return ExitCode::FAILURE;
     }
 
-    match command_loop(&mut input, &mut output) {
+    match command_loop(workspace, &mut input, &mut output) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("Could not continue Rust/400: {error}");
@@ -81,18 +82,17 @@ fn run_interactive_session(
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum ScreenState {
-    MainMenu,
-}
-
 fn write_startup(output: &mut impl Write, workspace: &Workspace) -> io::Result<()> {
-    render_active_screen(output, workspace, ScreenState::MainMenu)
+    render_active_screen(output, workspace, "MAIN")
 }
 
-fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result<()> {
+fn command_loop(
+    workspace: &Workspace,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> io::Result<()> {
     let mut line = String::new();
-    let mut current_screen = ScreenState::MainMenu;
+    let mut current_menu = "MAIN";
     let mut last_direct_input: Option<String> = None;
 
     loop {
@@ -112,18 +112,21 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
             continue;
         }
 
-        if let Some(result) = try_function_key(command, &mut last_direct_input, output)? {
+        if let Some(result) =
+            try_function_key(command, current_menu, &mut last_direct_input, output)?
+        {
             match result {
                 FunctionKeyResult::Continue => continue,
                 FunctionKeyResult::Exit => return Ok(()),
             }
         }
 
-        if let Some(result) = try_menu_selection(command, current_screen, output)? {
+        if let Some(result) = try_menu_selection(command, current_menu, output)? {
             match result {
                 MenuSelectionResult::Continue => continue,
-                MenuSelectionResult::Render(screen) => {
-                    current_screen = screen;
+                MenuSelectionResult::Render(menu_id) => {
+                    current_menu = menu_id;
+                    render_active_screen(output, workspace, current_menu)?;
                     continue;
                 }
                 MenuSelectionResult::Exit => return Ok(()),
@@ -140,6 +143,9 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
                         "Command '{}' is not registered yet. Use HELP for available commands.",
                         parsed.name
                     )?;
+                    if let Some(suggestion) = combined_command_hint(command) {
+                        writeln!(output, "{suggestion}")?;
+                    }
                     continue;
                 };
 
@@ -171,26 +177,52 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
                         }
                     }
                     Ok(CommandRequest::CreateLibrary(request)) => {
-                        writeln!(
-                            output,
-                            "Command 'CRTLIB' is mapped to handler {:?} for library '{}'{}.",
-                            definition.handler,
-                            request.library,
-                            request
-                                .text
-                                .as_ref()
-                                .map(|text| format!(" with text '{}'", text))
-                                .unwrap_or_default()
-                        )?;
+                        match create_library(workspace, &request.library, request.text.as_deref()) {
+                            Ok(record) => {
+                                writeln!(
+                                    output,
+                                    "CRTLIB created library {}{}.",
+                                    record.name,
+                                    record
+                                        .text
+                                        .as_deref()
+                                        .map(|text| format!(" with text '{text}'"))
+                                        .unwrap_or_default()
+                                )?;
+                            }
+                            Err(error) => writeln!(output, "{error}")?,
+                        }
+                    }
+                    Ok(CommandRequest::DisplayLibrary(request)) => {
+                        match find_library(workspace, &request.library) {
+                            Ok(Some(record)) => {
+                                writeln!(output, "Library: {}", record.name)?;
+                                writeln!(
+                                    output,
+                                    "Text: {}",
+                                    record.text.as_deref().unwrap_or("*NONE")
+                                )?;
+                                writeln!(output, "Created: {}", record.created_at_epoch_seconds)?;
+                            }
+                            Ok(None) => {
+                                writeln!(output, "Library {} does not exist.", request.library)?;
+                            }
+                            Err(error) => writeln!(output, "{error}")?,
+                        }
                     }
                     Ok(CommandRequest::SendMessage(request)) => {
                         writeln!(
                             output,
-                            "Command 'SNDMSG' is mapped to handler {:?} with message '{}' and {} recipient(s).",
-                            definition.handler,
+                            "SNDMSG would send '{}' to {} recipient(s).",
                             request.message,
                             request.recipients.len()
                         )?;
+                        if request.recipients.is_empty() {
+                            writeln!(
+                                output,
+                                "Hint: add TO(name) for a recipient, for example SNDMSG MSG('Hello') TO(QSYSOPR)."
+                            )?;
+                        }
                     }
                     Ok(CommandRequest::WorkObject(request)) => {
                         writeln!(
@@ -208,6 +240,9 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
             }
             Err(error) => {
                 writeln!(output, "Syntax error: {error}")?;
+                if let Some(suggestion) = combined_command_hint(command) {
+                    writeln!(output, "{suggestion}")?;
+                }
             }
         }
     }
@@ -216,50 +251,73 @@ fn command_loop(input: &mut impl BufRead, output: &mut impl Write) -> io::Result
 fn render_active_screen(
     output: &mut impl Write,
     workspace: &Workspace,
-    screen_state: ScreenState,
+    menu_id: &str,
 ) -> io::Result<()> {
-    match screen_state {
-        ScreenState::MainMenu => {
-            let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
-            let screen = MenuScreen {
-                menu,
-                system_name: "RUST400",
-                current_user: "MW",
-                job_name: "QPADEV0001",
-            };
+    let menu = find_menu(menu_id).expect("validated registry should contain rendered menu");
+    let screen = MenuScreen {
+        menu,
+        system_name: "RUST400",
+        current_user: "MW",
+        job_name: "QPADEV0001",
+    };
 
-            write!(output, "{}", render_menu(&screen))?;
-            writeln!(output, "  Workspace: {}", workspace.root().display())?;
-            writeln!(
-                output,
-                "  Enter EXIT in the command line to end the session."
-            )?;
-            Ok(())
-        }
-    }
+    write!(output, "{}", render_green_screen(&screen))?;
+    writeln!(output, "  Workspace: {}", workspace.root().display())?;
+    writeln!(
+        output,
+        "  Enter EXIT in the command line to end the session."
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum MenuSelectionResult {
     Continue,
-    Render(ScreenState),
+    Render(&'static str),
     Exit,
 }
 
 fn try_menu_selection(
     input: &str,
-    current_screen: ScreenState,
+    current_menu: &str,
     output: &mut impl Write,
 ) -> io::Result<Option<MenuSelectionResult>> {
-    let ScreenState::MainMenu = current_screen;
-    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+    let menu = find_menu(current_menu).expect("validated registry should contain current menu");
 
     if let Some(option) = find_option(menu, input) {
         return Ok(Some(match option.action {
             MenuAction::RunCommand("EXIT") => {
-                writeln!(output, "Menu selection 90 -> Sign off")?;
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}",
+                    option.selector, option.label
+                )?;
                 writeln!(output, "Session ended.")?;
                 MenuSelectionResult::Exit
+            }
+            MenuAction::RunCommand("DSPLIB") => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}. Type DSPLIB LIB(name) to inspect one library.",
+                    option.selector, option.label
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::RunCommand("SNDMSG") => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}. Type SNDMSG MSG('Hello') TO(QSYSOPR). Rust/400 uses single-token command names, not 'SND MSG'.",
+                    option.selector, option.label
+                )?;
+                MenuSelectionResult::Continue
+            }
+            MenuAction::RunCommand("CRTLIB") => {
+                writeln!(
+                    output,
+                    "Menu selection {} -> {}. Type CRTLIB LIB(name) TEXT('description') to create a library.",
+                    option.selector, option.label
+                )?;
+                MenuSelectionResult::Continue
             }
             MenuAction::RunCommand(command_name) => {
                 writeln!(
@@ -272,10 +330,10 @@ fn try_menu_selection(
             MenuAction::OpenMenu(target_menu) => {
                 writeln!(
                     output,
-                    "Menu selection {} -> {} would open menu '{}'. Returning to MAIN until that menu is implemented.",
+                    "Menu selection {} -> {} opens menu '{}'.",
                     option.selector, option.label, target_menu
                 )?;
-                MenuSelectionResult::Render(ScreenState::MainMenu)
+                MenuSelectionResult::Render(target_menu)
             }
         }));
     }
@@ -300,6 +358,7 @@ enum FunctionKeyResult {
 
 fn try_function_key(
     input: &str,
+    current_menu: &str,
     last_direct_input: &mut Option<String>,
     output: &mut impl Write,
 ) -> io::Result<Option<FunctionKeyResult>> {
@@ -307,7 +366,7 @@ fn try_function_key(
         return Ok(None);
     }
 
-    let menu = find_menu("MAIN").expect("validated registry should contain MAIN menu");
+    let menu = find_menu(current_menu).expect("validated registry should contain current menu");
     let Some(hint) = find_footer_hint(menu, input) else {
         writeln!(
             output,
@@ -326,7 +385,7 @@ fn try_function_key(
         FunctionKeyAction::Prompt => {
             writeln!(
                 output,
-                "Function key F4 -> Prompt. Type a command such as HELP, CRTLIB LIB(MYLIB), or 90."
+                "Function key F4 -> Prompt. Type a command such as HELP, CRTLIB LIB(MYLIB), DSPLIB LIB(MYLIB), or 90."
             )?;
             FunctionKeyResult::Continue
         }
@@ -360,6 +419,38 @@ fn try_function_key(
             FunctionKeyResult::Continue
         }
     }))
+}
+
+fn combined_command_hint(input: &str) -> Option<String> {
+    let mut parts = input.split_whitespace();
+    let first = parts.next()?;
+    let second = parts.next()?;
+    let second_prefix: String = second
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric())
+        .collect();
+
+    if !first
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+
+    if second_prefix.is_empty() {
+        return None;
+    }
+
+    let combined = format!("{first}{second_prefix}").to_ascii_uppercase();
+
+    find_command(&combined).map(|_| {
+        format!(
+            "Hint: Rust/400 uses single-token command names. Try {} instead of '{} {}'.",
+            combined,
+            first.to_ascii_uppercase(),
+            second_prefix.to_ascii_uppercase()
+        )
+    })
 }
 
 fn looks_like_function_key(input: &str) -> bool {
@@ -426,7 +517,8 @@ mod tests {
         let mut input = Cursor::new("\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.starts_with("  ===> "));
@@ -438,7 +530,8 @@ mod tests {
         let mut input = Cursor::new("exit\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Session ended."));
@@ -449,7 +542,8 @@ mod tests {
         let mut input = Cursor::new("");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert_eq!(transcript, "  ===> \n");
@@ -500,21 +594,25 @@ mod tests {
 
     #[test]
     fn help_lists_registered_commands_from_shared_metadata() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("help\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.contains("Available commands: EXIT, HELP, CRTLIB, SNDMSG, WRKOBJ"));
+        assert!(
+            transcript.contains("Available commands: EXIT, HELP, CRTLIB, DSPLIB, SNDMSG, WRKOBJ")
+        );
     }
 
     #[test]
     fn command_specific_help_comes_from_the_same_metadata_as_validation() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("help cmd(crtlib)\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Command: CRTLIB"));
@@ -524,10 +622,11 @@ mod tests {
 
     #[test]
     fn malformed_syntax_reports_a_parser_error() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("crtlib lib(\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Syntax error:"));
@@ -535,10 +634,11 @@ mod tests {
 
     #[test]
     fn invalid_parameters_report_a_validation_error() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("crtlib text('only text')\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Validation error: missing required parameter LIB"));
@@ -546,14 +646,54 @@ mod tests {
 
     #[test]
     fn shared_metadata_builds_a_typed_command_request_for_crtlib() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("crtlib lib(mylib) text('Learning library')\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.contains("Command 'CRTLIB' is mapped to handler CreateLibrary"));
-        assert!(transcript.contains("library 'MYLIB'"));
+        assert!(transcript.contains("CRTLIB created library MYLIB"));
+        assert!(transcript.contains("with text 'Learning library'"));
+    }
+
+    #[test]
+    fn dsplib_displays_a_persisted_library() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input =
+            Cursor::new("crtlib lib(mylib) text('Learning library')\ndsplib lib(mylib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Library: MYLIB"));
+        assert!(transcript.contains("Text: Learning library"));
+    }
+
+    #[test]
+    fn dsplib_reports_missing_libraries_cleanly() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("dsplib lib(missing)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Library MISSING does not exist."));
+    }
+
+    #[test]
+    fn duplicate_library_creation_reports_a_stable_message() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("crtlib lib(mylib)\ncrtlib lib(mylib)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("CRTLIB created library MYLIB."));
+        assert!(transcript.contains("Library MYLIB already exists."));
     }
 
     #[test]
@@ -561,10 +701,12 @@ mod tests {
         let mut input = Cursor::new("1\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
-        assert!(transcript.contains("Menu selection 1 -> User tasks would open menu 'USR'."));
+        assert!(transcript.contains("Menu selection 1 -> User tasks opens menu 'USR'."));
+        assert!(transcript.contains("User Tasks"));
     }
 
     #[test]
@@ -572,7 +714,8 @@ mod tests {
         let mut input = Cursor::new("77\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Selection '77' is not valid on menu MAIN."));
@@ -580,10 +723,11 @@ mod tests {
 
     #[test]
     fn direct_commands_still_work_from_the_main_menu_input_field() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("help cmd(crtlib)\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Command: CRTLIB"));
@@ -591,11 +735,40 @@ mod tests {
     }
 
     #[test]
+    fn split_command_names_show_a_helpful_hint() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("snd msg('Hello')\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains(
+            "Hint: Rust/400 uses single-token command names. Try SNDMSG instead of 'SND MSG'."
+        ));
+    }
+
+    #[test]
+    fn user_tasks_menu_offers_command_guidance() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("1\n2\n90\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("User Tasks"));
+        assert!(transcript.contains("Type SNDMSG MSG('Hello') TO(QSYSOPR)."));
+        assert!(transcript.contains("Return to main menu"));
+    }
+
+    #[test]
     fn sign_off_selection_exits_consistently_from_the_menu() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("90\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Menu selection 90 -> Sign off"));
@@ -604,10 +777,11 @@ mod tests {
 
     #[test]
     fn function_key_f3_exits_the_session() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("F3\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key F3 -> Exit"));
@@ -616,10 +790,11 @@ mod tests {
 
     #[test]
     fn function_key_f4_prompts_for_supported_input() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("F4\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key F4 -> Prompt."));
@@ -627,10 +802,11 @@ mod tests {
 
     #[test]
     fn function_key_f9_retrieves_the_previous_direct_input() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("help\nF9\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key F9 -> Retrieve 'help'"));
@@ -638,10 +814,11 @@ mod tests {
 
     #[test]
     fn function_key_f12_cancels_gracefully() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("F12\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key F12 -> Cancel and remain on MAIN."));
@@ -649,10 +826,11 @@ mod tests {
 
     #[test]
     fn function_key_f13_offers_information_assistant_guidance() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("F13\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key F13 -> Information Assistant."));
@@ -660,10 +838,11 @@ mod tests {
 
     #[test]
     fn unsupported_function_key_fails_gracefully() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
         let mut input = Cursor::new("F5\nEXIT\n");
         let mut output = Vec::new();
 
-        command_loop(&mut input, &mut output).expect("session should complete");
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Function key 'F5' is not supported on menu MAIN."));

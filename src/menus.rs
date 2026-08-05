@@ -134,14 +134,49 @@ const MAIN_MENU_HINTS: &[FooterHint] = &[
     },
 ];
 
-const MENUS: &[MenuDefinition] = &[MenuDefinition {
-    id: "MAIN",
-    title: "IBM i Main Menu",
-    prompt_label: "Selection or command",
-    system_label: "System",
-    options: MAIN_MENU_OPTIONS,
-    footer_hints: MAIN_MENU_HINTS,
-}];
+const USER_MENU_OPTIONS: &[MenuOption] = &[
+    MenuOption {
+        selector: "1",
+        label: "Display a library",
+        action: MenuAction::RunCommand("DSPLIB"),
+    },
+    MenuOption {
+        selector: "2",
+        label: "Send a message",
+        action: MenuAction::RunCommand("SNDMSG"),
+    },
+    MenuOption {
+        selector: "3",
+        label: "Create a library",
+        action: MenuAction::RunCommand("CRTLIB"),
+    },
+    MenuOption {
+        selector: "90",
+        label: "Return to main menu",
+        action: MenuAction::OpenMenu("MAIN"),
+    },
+];
+
+const USER_MENU_HINTS: &[FooterHint] = MAIN_MENU_HINTS;
+
+const MENUS: &[MenuDefinition] = &[
+    MenuDefinition {
+        id: "MAIN",
+        title: "IBM i Main Menu",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: MAIN_MENU_OPTIONS,
+        footer_hints: MAIN_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "USR",
+        title: "User Tasks",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: USER_MENU_OPTIONS,
+        footer_hints: USER_MENU_HINTS,
+    },
+];
 
 pub fn registered_menus() -> &'static [MenuDefinition] {
     MENUS
@@ -236,6 +271,14 @@ mod tests {
                 .action,
             FunctionKeyAction::Exit
         );
+
+        let user_menu = find_menu("USR").expect("USR menu should be registered");
+        assert_eq!(user_menu.title, "User Tasks");
+        assert_eq!(
+            user_menu.options[0].action,
+            MenuAction::RunCommand("DSPLIB")
+        );
+        assert_eq!(user_menu.options[3].action, MenuAction::OpenMenu("MAIN"));
     }
 
     #[test]
