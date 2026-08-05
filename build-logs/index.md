@@ -4,6 +4,7 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-04 | [Bootstrap the library catalog and first `CRTLIB` behavior](2026-08-04-us-004-01-library-catalog-bootstrap.md) | `US-004-01` bootstrap slice | Verified |
 | 2026-08-04 | [Mix menu selection with direct commands](2026-08-04-us-008-04-mix-menu-selection-and-direct-commands.md) | `US-008-04` | Verified |
 | 2026-08-04 | [Support function-key actions](2026-08-04-us-008-03-support-function-key-actions.md) | `US-008-03` | Verified |
 | 2026-08-04 | [Define menu screens from shared metadata](2026-08-04-us-008-02-shared-menu-metadata.md) | `US-008-02` | Verified |

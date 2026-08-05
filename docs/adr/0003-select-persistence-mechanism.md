@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Proposed — decision pending |
+| Status | Accepted |
 | Date | 2026-08-04 |
 | Owners | Project owner |
 | Related requirements | `FR-006`, `FR-010`, `FR-014`; PRD sections 12.2 and 13 |
@@ -39,28 +39,33 @@ Separates catalog queries from larger object content, but adds consistency and b
 
 ## Decision
 
-No option is accepted yet. Before `US-004-01` implementation begins, conduct a bounded spike comparing SQLite and versioned files against atomicity, recovery, migration, inspectability, reference-scale performance, crate maintenance, and license criteria. Record measured evidence here and obtain owner approval.
+Adopt a versioned text-file catalog inside the workspace for the first MVP library/object slices. The catalog must include an explicit schema header, fail closed on unsupported versions or malformed rows, and use write-then-rename replacement for atomic command-boundary updates.
+
+SQLite remains a viable later migration path if object volume, query complexity, concurrency, or integrity constraints outgrow the text catalog.
 
 ## Consequences
 
 ### Positive
 
-- Persistence implementation cannot silently select a technology.
-- The comparison will use Rust/400-specific scale and learning requirements.
+- Keeps the first persistent catalog dependency-free and easy for learners to inspect.
+- Fits the current project size and current single-user workspace model.
+- Preserves schema/version discipline before the object model expands.
 
 ### Negative
 
-- Catalog implementation remains blocked until the decision is accepted.
+- Querying and migrations will require application logic rather than database features.
+- Richer object relations may become awkward if the catalog grows substantially.
 
 ### Neutral or follow-up
 
-- Create a spike story before `US-004-01` or refine that story to include the decision gate.
-- Update dependency and backup guidance after acceptance.
+- Re-evaluate the decision when typed objects, library-list resolution, and delete/update workflows are implemented.
+- Document any future migration path so learners can see why persistence strategies change over time.
 
 ## Verification
 
-- The accepted revision must cite spike results and selected crate/version if applicable.
-- `US-004-01` cannot merge while this ADR remains Proposed.
+- `libraries::tests::parse_catalog_rejects_unsupported_schema_headers`
+- `libraries::tests::list_libraries_reopens_persisted_records_after_restart`
+- local quality gate via `cargo fmt --all && ./scripts/check.sh`
 
 ## References
 
@@ -69,5 +74,5 @@ No option is accepted yet. Before `US-004-01` implementation begins, conduct a b
 
 ## Amendment history
 
-- 2026-08-04: Initial proposal; decision intentionally deferred pending evidence.
-
+- 2026-08-04: Accepted a versioned text catalog for the first library/object persistence slices.
+- 2026-08-04: Initial proposal created earlier the same day before the first implementation slice existed.

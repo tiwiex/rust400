@@ -5,6 +5,7 @@ pub enum HandlerId {
     Exit,
     Help,
     CreateLibrary,
+    DisplayLibrary,
     SendMessage,
     WorkObject,
 }
@@ -37,6 +38,7 @@ pub enum CommandRequest {
     Exit,
     Help(HelpRequest),
     CreateLibrary(CreateLibraryRequest),
+    DisplayLibrary(DisplayLibraryRequest),
     SendMessage(SendMessageRequest),
     WorkObject(WorkObjectRequest),
 }
@@ -50,6 +52,11 @@ pub struct HelpRequest {
 pub struct CreateLibraryRequest {
     pub library: String,
     pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DisplayLibraryRequest {
+    pub library: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -99,6 +106,12 @@ const SNDMSG_PARAMETERS: &[ParameterDefinition] = &[
     },
 ];
 
+const DSPLIB_PARAMETERS: &[ParameterDefinition] = &[ParameterDefinition {
+    name: "LIB",
+    summary: "Names the library to display.",
+    multiplicity: ParameterMultiplicity::Required,
+}];
+
 const WRKOBJ_PARAMETERS: &[ParameterDefinition] = &[
     ParameterDefinition {
         name: "LIB",
@@ -135,6 +148,13 @@ const COMMANDS: &[CommandDefinition] = &[
         parameters: CRTLIB_PARAMETERS,
         mutually_exclusive_pairs: NO_EXCLUSIONS,
         handler: HandlerId::CreateLibrary,
+    },
+    CommandDefinition {
+        name: "DSPLIB",
+        summary: "Display one emulated library definition.",
+        parameters: DSPLIB_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayLibrary,
     },
     CommandDefinition {
         name: "SNDMSG",
@@ -212,6 +232,10 @@ pub fn build_request(
             library: required_value(command, "LIB")
                 .expect("validated command should contain required LIB"),
             text: single_optional_text(command, "TEXT"),
+        })),
+        HandlerId::DisplayLibrary => Ok(CommandRequest::DisplayLibrary(DisplayLibraryRequest {
+            library: required_value(command, "LIB")
+                .expect("validated command should contain required LIB"),
         })),
         HandlerId::SendMessage => Ok(CommandRequest::SendMessage(SendMessageRequest {
             message: required_value(command, "MSG")

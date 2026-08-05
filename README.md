@@ -24,6 +24,17 @@ The main screen input field now accepts both:
 
 The current function-key MVP treats typed entries such as `F3` or `F12` as function-key actions from the same input line.
 
+The first persistent library-management slice is now live:
+
+- `CRTLIB LIB(MYLIB) TEXT('Learning library')` creates an emulated library in the workspace catalog
+- `DSPLIB LIB(MYLIB)` displays the saved library details
+- repeating the same library creation reports a duplicate-library message
+- the catalog is stored inside the workspace and reopens on the next session
+
+See [docs/concepts/libraries-and-objects.md](docs/concepts/libraries-and-objects.md) for the AS/400-to-Linux learning bridge behind this model.
+
+Command names follow the OS/400-style single-token form. For example, use `SNDMSG`, not `SND MSG`.
+
 ## Prerequisites
 
 - A current 64-bit Linux environment
@@ -76,7 +87,16 @@ Example mixed input behavior today:
 
 ```text
   ===> 1
-Menu selection 1 -> User tasks would open menu 'USR'. Returning to MAIN until that menu is implemented.
+Menu selection 1 -> User tasks opens menu 'USR'.
+... User Tasks menu renders ...
+  ===> 2
+Menu selection 2 -> Send a message. Type SNDMSG MSG('Hello') TO(QSYSOPR). Rust/400 uses single-token command names, not 'SND MSG'.
+  ===> crtlib lib(mylib) text('Learning library')
+CRTLIB created library MYLIB with text 'Learning library'.
+  ===> dsplib lib(mylib)
+Library: MYLIB
+Text: Learning library
+Created: 1722816000
   ===> help cmd(crtlib)
 Command: CRTLIB
 Summary: Create an emulated library definition.
