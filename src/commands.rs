@@ -6,6 +6,8 @@ pub enum HandlerId {
     Help,
     CreateLibrary,
     DisplayLibrary,
+    DisplayJob,
+    DisplayUserProfile,
     SendMessage,
     WorkObject,
 }
@@ -39,6 +41,8 @@ pub enum CommandRequest {
     Help(HelpRequest),
     CreateLibrary(CreateLibraryRequest),
     DisplayLibrary(DisplayLibraryRequest),
+    DisplayJob,
+    DisplayUserProfile,
     SendMessage(SendMessageRequest),
     WorkObject(WorkObjectRequest),
 }
@@ -157,6 +161,20 @@ const COMMANDS: &[CommandDefinition] = &[
         handler: HandlerId::DisplayLibrary,
     },
     CommandDefinition {
+        name: "DSPJOB",
+        summary: "Display the current Rust/400 session job.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayJob,
+    },
+    CommandDefinition {
+        name: "DSPUSRPRF",
+        summary: "Display the current Rust/400 user profile.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayUserProfile,
+    },
+    CommandDefinition {
         name: "SNDMSG",
         summary: "Send a local emulator message.",
         parameters: SNDMSG_PARAMETERS,
@@ -237,6 +255,8 @@ pub fn build_request(
             library: required_value(command, "LIB")
                 .expect("validated command should contain required LIB"),
         })),
+        HandlerId::DisplayJob => Ok(CommandRequest::DisplayJob),
+        HandlerId::DisplayUserProfile => Ok(CommandRequest::DisplayUserProfile),
         HandlerId::SendMessage => Ok(CommandRequest::SendMessage(SendMessageRequest {
             message: required_value(command, "MSG")
                 .expect("validated command should contain required MSG"),

@@ -137,16 +137,26 @@ const MAIN_MENU_HINTS: &[FooterHint] = &[
 const USER_MENU_OPTIONS: &[MenuOption] = &[
     MenuOption {
         selector: "1",
-        label: "Display a library",
-        action: MenuAction::RunCommand("DSPLIB"),
+        label: "Display current user profile",
+        action: MenuAction::RunCommand("DSPUSRPRF"),
     },
     MenuOption {
         selector: "2",
+        label: "Display current job",
+        action: MenuAction::RunCommand("DSPJOB"),
+    },
+    MenuOption {
+        selector: "3",
         label: "Send a message",
         action: MenuAction::RunCommand("SNDMSG"),
     },
     MenuOption {
-        selector: "3",
+        selector: "4",
+        label: "Display a library",
+        action: MenuAction::RunCommand("DSPLIB"),
+    },
+    MenuOption {
+        selector: "5",
         label: "Create a library",
         action: MenuAction::RunCommand("CRTLIB"),
     },
@@ -276,9 +286,13 @@ mod tests {
         assert_eq!(user_menu.title, "User Tasks");
         assert_eq!(
             user_menu.options[0].action,
-            MenuAction::RunCommand("DSPLIB")
+            MenuAction::RunCommand("DSPUSRPRF")
         );
-        assert_eq!(user_menu.options[3].action, MenuAction::OpenMenu("MAIN"));
+        assert_eq!(
+            user_menu.options[1].action,
+            MenuAction::RunCommand("DSPJOB")
+        );
+        assert_eq!(user_menu.options[5].action, MenuAction::OpenMenu("MAIN"));
     }
 
     #[test]
