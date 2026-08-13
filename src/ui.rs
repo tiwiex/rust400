@@ -95,6 +95,17 @@ pub fn render_green_screen(screen: &MenuScreen<'_>) -> String {
     )
 }
 
+pub fn render_green_detail_screen(
+    screen: &MenuScreen<'_>,
+    section_title: &str,
+    detail_lines: &[String],
+) -> String {
+    format!(
+        "{GREEN_SCREEN_PREFIX}{}{GREEN_SCREEN_RESET}",
+        render_detail_screen(screen, section_title, detail_lines)
+    )
+}
+
 pub fn render_detail_screen(
     screen: &MenuScreen<'_>,
     section_title: &str,
@@ -213,7 +224,9 @@ fn render_footer_hints(hints: &[crate::menus::FooterHint]) -> String {
 mod tests {
     use crate::menus::find_menu;
 
-    use super::{INPUT_PROMPT, MenuScreen, render_green_screen, render_menu};
+    use super::{
+        INPUT_PROMPT, MenuScreen, render_green_detail_screen, render_green_screen, render_menu,
+    };
 
     #[test]
     fn main_menu_contains_expected_layout_regions() {
@@ -303,5 +316,23 @@ mod tests {
 
         assert!(rendered.starts_with("\x1b[2J\x1b[H\x1b[40m\x1b[92m"));
         assert!(rendered.ends_with("\x1b[0m"));
+    }
+
+    #[test]
+    fn green_detail_screen_wrapper_adds_terminal_styling() {
+        let screen = MenuScreen {
+            menu: find_menu("MAIN").expect("MAIN menu should exist"),
+            system_name: "NCRHEDEV",
+            current_user: "MW",
+            job_name: "QPADEV0001",
+        };
+
+        let rendered =
+            render_green_detail_screen(&screen, "Command result", &["One line".to_string()]);
+
+        assert!(rendered.starts_with("\x1b[2J\x1b[H\x1b[40m\x1b[92m"));
+        assert!(rendered.ends_with("\x1b[0m"));
+        assert!(rendered.contains("Command result"));
+        assert!(rendered.contains("One line"));
     }
 }

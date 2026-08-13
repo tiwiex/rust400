@@ -166,6 +166,21 @@ const USER_MENU_OPTIONS: &[MenuOption] = &[
         action: MenuAction::RunCommand("CRTLIB"),
     },
     MenuOption {
+        selector: "6",
+        label: "Display workspace path",
+        action: MenuAction::RunCommand("DSPPWD"),
+    },
+    MenuOption {
+        selector: "7",
+        label: "List workspace entries",
+        action: MenuAction::RunCommand("DSPLS"),
+    },
+    MenuOption {
+        selector: "8",
+        label: "View Linux user accounts",
+        action: MenuAction::RunCommand("DSPUSRS"),
+    },
+    MenuOption {
         selector: "90",
         label: "Return to main menu",
         action: MenuAction::OpenMenu("MAIN"),
@@ -204,6 +219,21 @@ const LINUX_MENU_OPTIONS: &[MenuOption] = &[
         selector: "6",
         label: "Message queue analogies",
         action: MenuAction::OpenMenu("LNXMSG"),
+    },
+    MenuOption {
+        selector: "7",
+        label: "Display workspace path",
+        action: MenuAction::RunCommand("DSPPWD"),
+    },
+    MenuOption {
+        selector: "8",
+        label: "List workspace entries",
+        action: MenuAction::RunCommand("DSPLS"),
+    },
+    MenuOption {
+        selector: "9",
+        label: "View Linux user accounts",
+        action: MenuAction::RunCommand("DSPUSRS"),
     },
     MenuOption {
         selector: "90",
@@ -399,7 +429,16 @@ mod tests {
             user_menu.options[1].action,
             MenuAction::RunCommand("DSPJOB")
         );
-        assert_eq!(user_menu.options[5].action, MenuAction::OpenMenu("MAIN"));
+        assert_eq!(
+            user_menu.options[5].action,
+            MenuAction::RunCommand("DSPPWD")
+        );
+        assert_eq!(user_menu.options[6].action, MenuAction::RunCommand("DSPLS"));
+        assert_eq!(
+            user_menu.options[7].action,
+            MenuAction::RunCommand("DSPUSRS")
+        );
+        assert_eq!(user_menu.options[8].action, MenuAction::OpenMenu("MAIN"));
 
         let linux_menu = find_menu("LNX").expect("LNX menu should be registered");
         assert_eq!(linux_menu.title, "Linux Mappings");
@@ -407,7 +446,19 @@ mod tests {
             linux_menu.options[0].action,
             MenuAction::OpenMenu("LNXPATH")
         );
-        assert_eq!(linux_menu.options[6].action, MenuAction::OpenMenu("MAIN"));
+        assert_eq!(
+            linux_menu.options[6].action,
+            MenuAction::RunCommand("DSPPWD")
+        );
+        assert_eq!(
+            linux_menu.options[7].action,
+            MenuAction::RunCommand("DSPLS")
+        );
+        assert_eq!(
+            linux_menu.options[8].action,
+            MenuAction::RunCommand("DSPUSRS")
+        );
+        assert_eq!(linux_menu.options[9].action, MenuAction::OpenMenu("MAIN"));
 
         let linux_detail = find_menu("LNXPATH").expect("LNXPATH menu should be registered");
         assert_eq!(linux_detail.options[0].action, MenuAction::OpenMenu("LNX"));
