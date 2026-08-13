@@ -5,6 +5,9 @@ pub enum HandlerId {
     Exit,
     Help,
     LinuxMapping,
+    DisplayWorkspacePath,
+    DisplayWorkspaceListing,
+    DisplayLinuxUsers,
     CreateLibrary,
     DisplayLibrary,
     WorkLibrary,
@@ -42,6 +45,9 @@ pub enum CommandRequest {
     Exit,
     Help(HelpRequest),
     LinuxMapping(LinuxMappingRequest),
+    DisplayWorkspacePath,
+    DisplayWorkspaceListing,
+    DisplayLinuxUsers,
     CreateLibrary(CreateLibraryRequest),
     DisplayLibrary(DisplayLibraryRequest),
     WorkLibrary,
@@ -169,6 +175,27 @@ const COMMANDS: &[CommandDefinition] = &[
         handler: HandlerId::LinuxMapping,
     },
     CommandDefinition {
+        name: "DSPPWD",
+        summary: "Display the contained Linux workspace path used by Rust/400.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayWorkspacePath,
+    },
+    CommandDefinition {
+        name: "DSPLS",
+        summary: "List files and directories inside the active Rust/400 workspace.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayWorkspaceListing,
+    },
+    CommandDefinition {
+        name: "DSPUSRS",
+        summary: "Display a read-only summary of Linux user accounts.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::DisplayLinuxUsers,
+    },
+    CommandDefinition {
         name: "CRTLIB",
         summary: "Create an emulated library definition.",
         parameters: CRTLIB_PARAMETERS,
@@ -279,6 +306,9 @@ pub fn build_request(
             term: required_value(command, "TERM")
                 .expect("validated command should contain required TERM"),
         })),
+        HandlerId::DisplayWorkspacePath => Ok(CommandRequest::DisplayWorkspacePath),
+        HandlerId::DisplayWorkspaceListing => Ok(CommandRequest::DisplayWorkspaceListing),
+        HandlerId::DisplayLinuxUsers => Ok(CommandRequest::DisplayLinuxUsers),
         HandlerId::CreateLibrary => Ok(CommandRequest::CreateLibrary(CreateLibraryRequest {
             library: required_value(command, "LIB")
                 .expect("validated command should contain required LIB"),

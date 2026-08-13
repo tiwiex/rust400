@@ -34,6 +34,7 @@ Rust/400 uses these mappings as a learning bridge, not as a claim of compatibili
 - Rust/400 example: `DSPUSRPRF`
 - Linux example: `id && whoami`
 - Behavior label: Intentionally different
+- Controlled host views in Rust/400: `DSPUSRPRF`, `DSPUSRS`
 
 ## Filesystem
 
@@ -45,6 +46,7 @@ Rust/400 uses these mappings as a learning bridge, not as a claim of compatibili
 - Rust/400 example: `WRKLIB`
 - Linux example: `find . -maxdepth 2 -type d`
 - Behavior label: Historically inspired
+- Controlled host views in Rust/400: `DSPPWD`, `DSPLS`
 
 ## Print spool
 

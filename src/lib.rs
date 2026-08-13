@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod libraries;
+pub mod linux_views;
 pub mod mappings;
 pub mod menus;
 pub mod parser;

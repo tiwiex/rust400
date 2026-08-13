@@ -63,3 +63,17 @@ Acceptance criteria:
 2. Built-in help and generated documentation use the same source content.
 3. Automated checks detect missing mappings, limitation notes, examples, or broken concept links.
 
+### US-003-05: View controlled Linux read-only details
+
+**As a** returning operator or Linux-first learner, **I want** safe read-only views of selected Linux state **so that** I can connect Rust/400 concepts to the host system without turning the emulator into a general shell.
+
+- Requirements: FR-001, FR-023, FR-024, FR-026, FR-027, FR-028
+- Priority: Should
+- Dependencies: US-002-03, US-003-02, US-003-03
+
+Acceptance criteria:
+
+1. A user can display the current Linux directory context for the session through a documented Rust/400 command without invoking a host shell.
+2. A user can list files and directories inside the current Linux directory through a documented Rust/400 command, and the output labels the view as a Linux analogy rather than an OS/400-equivalent object catalog.
+3. A user can view a read-only summary of Linux user accounts from host data through a documented Rust/400 command, with clear wording that Rust/400 profiles and Linux accounts are not the same authority model.
+4. The implementation does not accept arbitrary shell input or mutate host users, files, or system configuration.

@@ -4,6 +4,7 @@ Entries are listed in reverse chronological order.
 
 | Date | Entry | Story / subject | Status |
 |---|---|---|---|
+| 2026-08-13 | [Controlled Linux read-only views](2026-08-13-us-003-05-controlled-linux-readonly-views.md) | `US-003-05` | In progress |
 | 2026-08-13 | [Linux mappings menu and lookup](2026-08-13-us-003-03-linux-mappings-menu.md) | `US-003-03` | Verified |
 | 2026-08-13 | [Work with libraries through `WRKLIB`](2026-08-13-us-004-02-work-with-libraries.md) | `US-004-02` | Verified |
 | 2026-08-04 | [Bootstrap the library catalog and first `CRTLIB` behavior](2026-08-04-us-004-01-library-catalog-bootstrap.md) | `US-004-01` bootstrap slice | Verified |
