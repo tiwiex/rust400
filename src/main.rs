@@ -7,7 +7,7 @@ use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
 };
-use rust400::libraries::{create_library, find_library};
+use rust400::libraries::{create_library, find_library, list_libraries};
 use rust400::menus::{
     FunctionKeyAction, MenuAction, find_footer_hint, find_menu, find_option, registered_menus,
     validate_menu_registry,
@@ -228,6 +228,34 @@ fn command_loop_with_session(
                             Err(error) => writeln!(output, "{error}")?,
                         }
                     }
+                    Ok(CommandRequest::WorkLibrary) => match list_libraries(workspace) {
+                        Ok(libraries) if libraries.is_empty() => {
+                            writeln!(
+                                output,
+                                "No libraries exist in the current Rust/400 workspace."
+                            )?;
+                            writeln!(
+                                output,
+                                "Try next: CRTLIB LIB(MYLIB) TEXT('Learning library')"
+                            )?;
+                        }
+                        Ok(libraries) => {
+                            writeln!(output, "Libraries in current workspace:")?;
+                            for library in libraries {
+                                writeln!(
+                                    output,
+                                    "- {}{}",
+                                    library.name,
+                                    library
+                                        .text
+                                        .as_deref()
+                                        .map(|text| format!(" -- {text}"))
+                                        .unwrap_or_default()
+                                )?;
+                            }
+                        }
+                        Err(error) => writeln!(output, "{error}")?,
+                    },
                     Ok(CommandRequest::DisplayJob) => {
                         writeln!(output, "Job: {}", session.job_name())?;
                         writeln!(output, "User: {}", session.current_user())?;
@@ -653,7 +681,7 @@ mod tests {
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains(
-            "Available commands: EXIT, HELP, CRTLIB, DSPLIB, DSPJOB, DSPUSRPRF, SNDMSG, WRKOBJ"
+            "Available commands: EXIT, HELP, CRTLIB, DSPLIB, WRKLIB, DSPJOB, DSPUSRPRF, SNDMSG, WRKOBJ"
         ));
     }
 
@@ -732,6 +760,35 @@ mod tests {
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains("Library MISSING does not exist."));
+    }
+
+    #[test]
+    fn wrklib_lists_existing_libraries() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new(
+            "crtlib lib(mylib) text('Learning library')\ncrtlib lib(testlib)\nwrklib\nEXIT\n",
+        );
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Libraries in current workspace:"));
+        assert!(transcript.contains("- MYLIB -- Learning library"));
+        assert!(transcript.contains("- TESTLIB"));
+    }
+
+    #[test]
+    fn wrklib_reports_an_empty_catalog_cleanly() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("wrklib\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("No libraries exist in the current Rust/400 workspace."));
+        assert!(transcript.contains("Try next: CRTLIB LIB(MYLIB) TEXT('Learning library')"));
     }
 
     #[test]

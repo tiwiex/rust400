@@ -6,6 +6,7 @@ pub enum HandlerId {
     Help,
     CreateLibrary,
     DisplayLibrary,
+    WorkLibrary,
     DisplayJob,
     DisplayUserProfile,
     SendMessage,
@@ -41,6 +42,7 @@ pub enum CommandRequest {
     Help(HelpRequest),
     CreateLibrary(CreateLibraryRequest),
     DisplayLibrary(DisplayLibraryRequest),
+    WorkLibrary,
     DisplayJob,
     DisplayUserProfile,
     SendMessage(SendMessageRequest),
@@ -161,6 +163,13 @@ const COMMANDS: &[CommandDefinition] = &[
         handler: HandlerId::DisplayLibrary,
     },
     CommandDefinition {
+        name: "WRKLIB",
+        summary: "List emulated libraries in the current workspace.",
+        parameters: NO_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::WorkLibrary,
+    },
+    CommandDefinition {
         name: "DSPJOB",
         summary: "Display the current Rust/400 session job.",
         parameters: NO_PARAMETERS,
@@ -255,6 +264,7 @@ pub fn build_request(
             library: required_value(command, "LIB")
                 .expect("validated command should contain required LIB"),
         })),
+        HandlerId::WorkLibrary => Ok(CommandRequest::WorkLibrary),
         HandlerId::DisplayJob => Ok(CommandRequest::DisplayJob),
         HandlerId::DisplayUserProfile => Ok(CommandRequest::DisplayUserProfile),
         HandlerId::SendMessage => Ok(CommandRequest::SendMessage(SendMessageRequest {
