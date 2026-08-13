@@ -36,6 +36,12 @@ See [docs/concepts/libraries-and-objects.md](docs/concepts/libraries-and-objects
 
 Command names follow the OS/400-style single-token form. For example, use `SNDMSG`, not `SND MSG`.
 
+Rust/400 also includes a Linux-learning bridge inside the shell:
+
+- menu option `12` opens a Linux mappings menu
+- `LNXMAP TERM(PATH)` compares a Linux concept with the closest Rust/400 idea
+- Linux examples are shown as educational text only and are never executed automatically
+
 ## Prerequisites
 
 - A current 64-bit Linux environment

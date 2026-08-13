@@ -95,6 +95,11 @@ const MAIN_MENU_OPTIONS: &[MenuOption] = &[
         action: MenuAction::OpenMenu("ACCESS"),
     },
     MenuOption {
+        selector: "12",
+        label: "Linux mappings",
+        action: MenuAction::OpenMenu("LNX"),
+    },
+    MenuOption {
         selector: "90",
         label: "Sign off",
         action: MenuAction::RunCommand("EXIT"),
@@ -169,6 +174,52 @@ const USER_MENU_OPTIONS: &[MenuOption] = &[
 
 const USER_MENU_HINTS: &[FooterHint] = MAIN_MENU_HINTS;
 
+const LINUX_MENU_OPTIONS: &[MenuOption] = &[
+    MenuOption {
+        selector: "1",
+        label: "PATH and library lists",
+        action: MenuAction::OpenMenu("LNXPATH"),
+    },
+    MenuOption {
+        selector: "2",
+        label: "Processes and jobs",
+        action: MenuAction::OpenMenu("LNXPROC"),
+    },
+    MenuOption {
+        selector: "3",
+        label: "Linux users and user profiles",
+        action: MenuAction::OpenMenu("LNXUSER"),
+    },
+    MenuOption {
+        selector: "4",
+        label: "Filesystem and libraries",
+        action: MenuAction::OpenMenu("LNXFS"),
+    },
+    MenuOption {
+        selector: "5",
+        label: "Print spool and spooled files",
+        action: MenuAction::OpenMenu("LNXSPL"),
+    },
+    MenuOption {
+        selector: "6",
+        label: "Message queue analogies",
+        action: MenuAction::OpenMenu("LNXMSG"),
+    },
+    MenuOption {
+        selector: "90",
+        label: "Return to main menu",
+        action: MenuAction::OpenMenu("MAIN"),
+    },
+];
+
+const LINUX_MENU_HINTS: &[FooterHint] = MAIN_MENU_HINTS;
+
+const LINUX_DETAIL_OPTIONS: &[MenuOption] = &[MenuOption {
+    selector: "90",
+    label: "Return to Linux mappings",
+    action: MenuAction::OpenMenu("LNX"),
+}];
+
 const MENUS: &[MenuDefinition] = &[
     MenuDefinition {
         id: "MAIN",
@@ -185,6 +236,62 @@ const MENUS: &[MenuDefinition] = &[
         system_label: "System",
         options: USER_MENU_OPTIONS,
         footer_hints: USER_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNX",
+        title: "Linux Mappings",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_MENU_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXPATH",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXPROC",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXUSER",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXFS",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXSPL",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
+    },
+    MenuDefinition {
+        id: "LNXMSG",
+        title: "Linux Mapping Detail",
+        prompt_label: "Selection or command",
+        system_label: "System",
+        options: LINUX_DETAIL_OPTIONS,
+        footer_hints: LINUX_MENU_HINTS,
     },
 ];
 
@@ -273,8 +380,8 @@ mod tests {
         assert_eq!(menu.prompt_label, "Selection or command");
         assert_eq!(menu.options[0].selector, "1");
         assert_eq!(menu.options[0].label, "User tasks");
-        assert_eq!(menu.options[11].selector, "90");
-        assert_eq!(menu.options[11].action, MenuAction::RunCommand("EXIT"));
+        assert_eq!(menu.options[12].selector, "90");
+        assert_eq!(menu.options[12].action, MenuAction::RunCommand("EXIT"));
         assert_eq!(
             find_footer_hint(menu, "F3")
                 .expect("F3 should exist")
@@ -293,6 +400,17 @@ mod tests {
             MenuAction::RunCommand("DSPJOB")
         );
         assert_eq!(user_menu.options[5].action, MenuAction::OpenMenu("MAIN"));
+
+        let linux_menu = find_menu("LNX").expect("LNX menu should be registered");
+        assert_eq!(linux_menu.title, "Linux Mappings");
+        assert_eq!(
+            linux_menu.options[0].action,
+            MenuAction::OpenMenu("LNXPATH")
+        );
+        assert_eq!(linux_menu.options[6].action, MenuAction::OpenMenu("MAIN"));
+
+        let linux_detail = find_menu("LNXPATH").expect("LNXPATH menu should be registered");
+        assert_eq!(linux_detail.options[0].action, MenuAction::OpenMenu("LNX"));
     }
 
     #[test]

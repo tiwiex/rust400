@@ -95,6 +95,71 @@ pub fn render_green_screen(screen: &MenuScreen<'_>) -> String {
     )
 }
 
+pub fn render_detail_screen(
+    screen: &MenuScreen<'_>,
+    section_title: &str,
+    detail_lines: &[String],
+) -> String {
+    let mut output = String::new();
+    let system_line = format!("{}: {}", screen.menu.system_label, screen.system_name);
+    let left_pad = " ".repeat((VIEWPORT_WIDTH - PANEL_WIDTH) / 2);
+    let pad = |line: String| format!("{left_pad}{line}");
+
+    for _ in 0..TOP_PADDING_LINES {
+        writeln!(&mut output).expect("write should succeed");
+    }
+
+    writeln!(&mut output, "{}", pad(" ".repeat(PANEL_WIDTH))).expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}{}",
+        left_pad,
+        format_args!(
+            "{}{}",
+            pad_right(screen.menu.id, 12),
+            center_with_right(screen.menu.title, &system_line, PANEL_WIDTH - 12)
+        )
+    )
+    .expect("write should succeed");
+    writeln!(&mut output).expect("write should succeed");
+    writeln!(&mut output, "{}", pad(format!("  {section_title}"))).expect("write should succeed");
+    writeln!(&mut output).expect("write should succeed");
+
+    for line in detail_lines {
+        writeln!(&mut output, "{}", pad(format!("  {line}"))).expect("write should succeed");
+    }
+
+    writeln!(&mut output).expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}",
+        pad(format!("  {}", screen.menu.prompt_label))
+    )
+    .expect("write should succeed");
+    writeln!(&mut output, "{}", pad(format!("  {INPUT_PROMPT}"))).expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}",
+        pad(format!("  {}", "-".repeat(PANEL_WIDTH.saturating_sub(2))))
+    )
+    .expect("write should succeed");
+    for line in render_footer_hints(screen.menu.footer_hints).lines() {
+        writeln!(&mut output, "{}", pad(format!("  {line}"))).expect("write should succeed");
+    }
+    writeln!(&mut output).expect("write should succeed");
+    writeln!(
+        &mut output,
+        "{}",
+        pad(format!(
+            "  User: {:<12} Job: {}",
+            screen.current_user, screen.job_name
+        ))
+    )
+    .expect("write should succeed");
+
+    output
+}
+
 fn pad_right(text: &str, width: usize) -> String {
     format!("{text:<width$}")
 }
@@ -207,6 +272,7 @@ mod tests {
             "                     9. Display a menu".to_string(),
             "                     10. Information Assistant options".to_string(),
             "                     11. IBM i Access tasks".to_string(),
+            "                     12. Linux mappings".to_string(),
             "                     90. Sign off".to_string(),
             "".to_string(),
             "                  Selection or command".to_string(),
