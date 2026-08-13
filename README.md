@@ -28,6 +28,7 @@ The first persistent library-management slice is now live:
 
 - `CRTLIB LIB(MYLIB) TEXT('Learning library')` creates an emulated library in the workspace catalog
 - `DSPLIB LIB(MYLIB)` displays the saved library details
+- `WRKLIB` lists libraries in the current workspace
 - repeating the same library creation reports a duplicate-library message
 - the catalog is stored inside the workspace and reopens on the next session
 
@@ -97,6 +98,9 @@ CRTLIB created library MYLIB with text 'Learning library'.
 Library: MYLIB
 Text: Learning library
 Created: 1722816000
+  ===> wrklib
+Libraries in current workspace:
+- MYLIB -- Learning library
   ===> help cmd(crtlib)
 Command: CRTLIB
 Summary: Create an emulated library definition.
