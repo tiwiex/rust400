@@ -8,13 +8,16 @@ use rust400::commands::{
     validate_registry_metadata,
 };
 use rust400::libraries::{create_library, find_library, list_libraries};
+use rust400::mappings::{find_mapping, find_mapping_for_menu, render_mapping};
 use rust400::menus::{
     FunctionKeyAction, MenuAction, find_footer_hint, find_menu, find_option, registered_menus,
     validate_menu_registry,
 };
 use rust400::parser::parse_command;
 use rust400::session::SessionContext;
-use rust400::ui::{INPUT_PROMPT, MenuScreen, render_green_screen};
+use rust400::ui::{
+    INPUT_PROMPT, MenuScreen, render_detail_screen, render_green_screen, render_menu,
+};
 use rust400::workspace::Workspace;
 
 const USAGE: &str = "Usage: rust400 (--workspace <absolute-path> | --temporary-workspace)";
@@ -135,6 +138,11 @@ fn command_loop_with_session(
         {
             match result {
                 FunctionKeyResult::Continue => continue,
+                FunctionKeyResult::Render(menu_id) => {
+                    current_menu = menu_id;
+                    render_active_screen(output, workspace, session, current_menu)?;
+                    continue;
+                }
                 FunctionKeyResult::Exit => return Ok(()),
             }
         }
@@ -191,6 +199,17 @@ fn command_loop_with_session(
                                     .map(|definition| definition.name)
                                     .collect::<Vec<_>>()
                                     .join(", ")
+                            )?;
+                        }
+                    }
+                    Ok(CommandRequest::LinuxMapping(request)) => {
+                        if let Some(mapping) = find_mapping(&request.term) {
+                            writeln!(output, "{}", render_mapping(mapping))?;
+                        } else {
+                            writeln!(
+                                output,
+                                "Linux mapping term '{}' is not registered yet.",
+                                request.term
                             )?;
                         }
                     }
@@ -324,7 +343,29 @@ fn render_active_screen(
         job_name: session.job_name(),
     };
 
-    write!(output, "{}", render_green_screen(&screen))?;
+    let rendered_screen = if let Some(mapping) = find_mapping_for_menu(menu_id) {
+        let detail_lines = render_mapping(mapping)
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        render_detail_screen(&screen, "Linux mapping detail", &detail_lines)
+    } else {
+        render_menu(&screen)
+    };
+
+    write!(
+        output,
+        "{}",
+        if find_mapping_for_menu(menu_id).is_some() {
+            format!(
+                "\x1b[2J\x1b[H\x1b[40m\x1b[92m{}{reset}",
+                rendered_screen,
+                reset = "\x1b[0m"
+            )
+        } else {
+            render_green_screen(&screen)
+        }
+    )?;
     writeln!(output, "  Workspace: {}", workspace.root().display())?;
     writeln!(
         output,
@@ -432,6 +473,7 @@ fn try_menu_selection(
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum FunctionKeyResult {
     Continue,
+    Render(&'static str),
     Exit,
 }
 
@@ -480,8 +522,16 @@ fn try_function_key(
             FunctionKeyResult::Continue
         }
         FunctionKeyAction::Cancel => {
-            writeln!(output, "Function key F12 -> Cancel and remain on MAIN.")?;
-            FunctionKeyResult::Continue
+            if find_mapping_for_menu(current_menu).is_some() {
+                writeln!(
+                    output,
+                    "Function key F12 -> Cancel and return to Linux mappings."
+                )?;
+                FunctionKeyResult::Render("LNX")
+            } else {
+                writeln!(output, "Function key F12 -> Cancel and remain on MAIN.")?;
+                FunctionKeyResult::Continue
+            }
         }
         FunctionKeyAction::Help => {
             writeln!(
@@ -681,7 +731,7 @@ mod tests {
 
         let transcript = String::from_utf8(output).expect("session output should be utf-8");
         assert!(transcript.contains(
-            "Available commands: EXIT, HELP, CRTLIB, DSPLIB, WRKLIB, DSPJOB, DSPUSRPRF, SNDMSG, WRKOBJ"
+            "Available commands: EXIT, HELP, LNXMAP, CRTLIB, DSPLIB, WRKLIB, DSPJOB, DSPUSRPRF, SNDMSG, WRKOBJ"
         ));
     }
 
@@ -818,6 +868,19 @@ mod tests {
     }
 
     #[test]
+    fn linux_mappings_menu_opens_from_main_menu() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("12\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Menu selection 12 -> Linux mappings opens menu 'LNX'."));
+        assert!(transcript.contains("Linux Mappings"));
+    }
+
+    #[test]
     fn invalid_numeric_selection_reports_menu_specific_error() {
         let mut input = Cursor::new("77\nEXIT\n");
         let mut output = Vec::new();
@@ -869,6 +932,54 @@ mod tests {
         assert!(transcript.contains("Type DSPUSRPRF to inspect the current Rust/400 profile."));
         assert!(transcript.contains("Type DSPJOB to inspect the current session job."));
         assert!(transcript.contains("Return to main menu"));
+    }
+
+    #[test]
+    fn lnxmap_displays_a_registered_mapping_card() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("lnxmap term(path)\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Linux term: PATH"));
+        assert!(transcript.contains("Rust/400 concept: Library list"));
+        assert!(transcript.contains("Comparable Linux example:"));
+    }
+
+    #[test]
+    fn linux_mappings_menu_runs_a_predefined_lookup() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("12\n1\n90\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Linux Mappings"));
+        assert!(
+            transcript.contains("Menu selection 1 -> PATH and library lists opens menu 'LNXPATH'.")
+        );
+        assert!(transcript.contains("Linux term: PATH"));
+        assert!(transcript.contains("Rust/400 command: DSPLIBL"));
+        assert!(
+            transcript.contains("Menu selection 90 -> Return to Linux mappings opens menu 'LNX'.")
+        );
+    }
+
+    #[test]
+    fn linux_mapping_detail_f12_returns_to_linux_mappings() {
+        let workspace = Workspace::temporary().expect("temporary workspace should exist");
+        let mut input = Cursor::new("12\n1\nF12\nEXIT\n");
+        let mut output = Vec::new();
+
+        command_loop(&workspace, &mut input, &mut output).expect("session should complete");
+
+        let transcript = String::from_utf8(output).expect("session output should be utf-8");
+        assert!(transcript.contains("Linux term: PATH"));
+        assert!(transcript.contains("Function key F12 -> Cancel and return to Linux mappings."));
+        assert!(transcript.contains("Linux Mappings"));
     }
 
     #[test]

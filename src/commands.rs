@@ -4,6 +4,7 @@ use crate::parser::{CommandValidation, ParsedCommand, ValidationError, validate_
 pub enum HandlerId {
     Exit,
     Help,
+    LinuxMapping,
     CreateLibrary,
     DisplayLibrary,
     WorkLibrary,
@@ -40,6 +41,7 @@ pub struct CommandDefinition {
 pub enum CommandRequest {
     Exit,
     Help(HelpRequest),
+    LinuxMapping(LinuxMappingRequest),
     CreateLibrary(CreateLibraryRequest),
     DisplayLibrary(DisplayLibraryRequest),
     WorkLibrary,
@@ -52,6 +54,11 @@ pub enum CommandRequest {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HelpRequest {
     pub command: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LinuxMappingRequest {
+    pub term: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -84,6 +91,12 @@ const HELP_PARAMETERS: &[ParameterDefinition] = &[ParameterDefinition {
     name: "CMD",
     summary: "Show help for one registered command name.",
     multiplicity: ParameterMultiplicity::Optional,
+}];
+
+const LNXMAP_PARAMETERS: &[ParameterDefinition] = &[ParameterDefinition {
+    name: "TERM",
+    summary: "Names the Linux concept to compare with Rust/400.",
+    multiplicity: ParameterMultiplicity::Required,
 }];
 
 const CRTLIB_PARAMETERS: &[ParameterDefinition] = &[
@@ -147,6 +160,13 @@ const COMMANDS: &[CommandDefinition] = &[
         parameters: HELP_PARAMETERS,
         mutually_exclusive_pairs: NO_EXCLUSIONS,
         handler: HandlerId::Help,
+    },
+    CommandDefinition {
+        name: "LNXMAP",
+        summary: "Compare one Linux concept with the closest Rust/400 idea.",
+        parameters: LNXMAP_PARAMETERS,
+        mutually_exclusive_pairs: NO_EXCLUSIONS,
+        handler: HandlerId::LinuxMapping,
     },
     CommandDefinition {
         name: "CRTLIB",
@@ -254,6 +274,10 @@ pub fn build_request(
         HandlerId::Exit => Ok(CommandRequest::Exit),
         HandlerId::Help => Ok(CommandRequest::Help(HelpRequest {
             command: single_optional_identifier(command, "CMD"),
+        })),
+        HandlerId::LinuxMapping => Ok(CommandRequest::LinuxMapping(LinuxMappingRequest {
+            term: required_value(command, "TERM")
+                .expect("validated command should contain required TERM"),
         })),
         HandlerId::CreateLibrary => Ok(CommandRequest::CreateLibrary(CreateLibraryRequest {
             library: required_value(command, "LIB")
