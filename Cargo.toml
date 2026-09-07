@@ -7,3 +7,4 @@ description = "An educational, OS/400-inspired shell for Linux"
 publish = false
 
 [dependencies]
+crossterm = "0.29.0"

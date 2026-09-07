@@ -65,3 +65,18 @@ Acceptance criteria:
 1. The main menu accepts either a numbered selection or a command in the documented input area.
 2. The input-handling rules are documented and tested for ambiguous or invalid entries.
 3. Navigation back to the main menu remains consistent after menu-driven and command-driven flows.
+
+### US-008-05: Capture real terminal function keys
+
+**As a** returning operator, **I want** physical function keys to trigger the footer actions **so that** the emulator feels closer to an actual AS/400-style terminal workflow.
+
+- Requirements: `FR-019A`, `FR-001`
+- Priority: Should
+- Dependencies: `US-008-01`, `US-008-03`, `US-008-04`
+
+Acceptance criteria:
+
+1. Pressing supported physical function keys such as F3, F4, F9, and F12 triggers the same actions shown in the active footer legend without requiring the user to type `F3` or `F12` as text.
+2. Direct command entry and numbered menu selection continue to work in the same interactive session after key-event support is introduced.
+3. The terminal mode is restored cleanly when the session exits normally or due to an error.
+4. Automated tests cover the key-to-action mapping and interactive fallback behavior where practical.

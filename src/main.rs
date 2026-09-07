@@ -1,8 +1,10 @@
 use std::env;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use rust400::commands::{
     CommandRequest, build_request, find_command, registered_commands, render_help,
     validate_registry_metadata,
@@ -76,6 +78,10 @@ fn run_interactive_session(
     mut input: impl BufRead,
     mut output: impl Write,
 ) -> ExitCode {
+    if io::stdin().is_terminal() && io::stdout().is_terminal() {
+        return run_terminal_session(workspace);
+    }
+
     let session = SessionContext::new();
 
     if let Err(error) = write_startup(&mut output, workspace, &session) {
@@ -84,6 +90,36 @@ fn run_interactive_session(
     }
 
     match command_loop_with_session(workspace, &session, &mut input, &mut output) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Could not continue Rust/400: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_terminal_session(workspace: &Workspace) -> ExitCode {
+    let session = SessionContext::new();
+    let mut output = io::stdout().lock();
+
+    if let Err(error) = write_startup(&mut output, workspace, &session) {
+        eprintln!("Could not start Rust/400: {error}");
+        return ExitCode::FAILURE;
+    }
+
+    let raw_mode_guard = match RawModeGuard::activate() {
+        Ok(guard) => guard,
+        Err(error) => {
+            eprintln!("Could not continue Rust/400: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut state = SessionState::new(workspace);
+    let status = terminal_event_loop(workspace, &session, &mut state, &mut output);
+    drop(raw_mode_guard);
+
+    match status {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("Could not continue Rust/400: {error}");
@@ -116,10 +152,8 @@ fn command_loop_with_session(
     input: &mut impl BufRead,
     output: &mut impl Write,
 ) -> io::Result<()> {
+    let mut state = SessionState::new(workspace);
     let mut line = String::new();
-    let mut current_menu = "MAIN";
-    let mut last_direct_input: Option<String> = None;
-    let session_linux_path = determine_session_linux_path(workspace.root());
 
     loop {
         write!(output, "  {INPUT_PROMPT}")?;
@@ -138,378 +172,85 @@ fn command_loop_with_session(
             continue;
         }
 
-        if let Some(result) =
-            try_function_key(command, current_menu, &mut last_direct_input, output)?
-        {
-            match result {
-                FunctionKeyResult::Continue => continue,
-                FunctionKeyResult::Render(menu_id) => {
-                    current_menu = menu_id;
-                    render_active_screen(output, workspace, session, current_menu)?;
-                    continue;
-                }
-                FunctionKeyResult::Exit => return Ok(()),
-            }
+        match process_input(command, workspace, session, &mut state, output)? {
+            LoopControl::Continue => continue,
+            LoopControl::Exit => return Ok(()),
         }
+    }
+}
 
-        if let Some(result) = try_menu_selection(command, current_menu, output)? {
-            match result {
-                MenuSelectionResult::Continue => continue,
-                MenuSelectionResult::Render(menu_id) => {
-                    current_menu = menu_id;
-                    render_active_screen(output, workspace, session, current_menu)?;
-                    continue;
-                }
-                MenuSelectionResult::Exit => return Ok(()),
-            }
-        }
+fn terminal_event_loop(
+    workspace: &Workspace,
+    session: &SessionContext,
+    state: &mut SessionState,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    let mut input_buffer = String::new();
 
-        last_direct_input = Some(command.to_string());
-
-        match parse_command(command) {
-            Ok(parsed) => {
-                let Some(definition) = find_command(&parsed.name) else {
-                    writeln!(
-                        output,
-                        "Command '{}' is not registered yet. Use HELP for available commands.",
-                        parsed.name
-                    )?;
-                    if let Some(suggestion) = combined_command_hint(command) {
-                        writeln!(output, "{suggestion}")?;
+    loop {
+        match event::read().map_err(io::Error::other)? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                match key_event.code {
+                    KeyCode::F(number) => {
+                        let key = format!("F{number}");
+                        match process_input(&key, workspace, session, state, output)? {
+                            LoopControl::Continue => {
+                                input_buffer.clear();
+                                write!(output, "  {INPUT_PROMPT}")?;
+                                output.flush()?;
+                            }
+                            LoopControl::Exit => return Ok(()),
+                        }
                     }
-                    continue;
-                };
+                    KeyCode::Enter => {
+                        writeln!(output)?;
+                        let command = input_buffer.trim().to_string();
+                        input_buffer.clear();
 
-                match build_request(&parsed, definition) {
-                    Ok(CommandRequest::Exit) => {
+                        if command.is_empty() {
+                            write!(output, "  {INPUT_PROMPT}")?;
+                            output.flush()?;
+                            continue;
+                        }
+
+                        match process_input(&command, workspace, session, state, output)? {
+                            LoopControl::Continue => {
+                                write!(output, "  {INPUT_PROMPT}")?;
+                                output.flush()?;
+                            }
+                            LoopControl::Exit => return Ok(()),
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if !input_buffer.is_empty() {
+                            input_buffer.pop();
+                            write!(output, "\u{8} \u{8}")?;
+                            output.flush()?;
+                        }
+                    }
+                    KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                        writeln!(output)?;
                         writeln!(output, "Session ended.")?;
                         return Ok(());
                     }
-                    Ok(CommandRequest::Help(request)) => {
-                        let mut lines = Vec::new();
-                        if let Some(command_name) = request.command {
-                            if let Some(help_definition) = find_command(&command_name) {
-                                lines.extend(
-                                    render_help(help_definition).lines().map(str::to_string),
-                                );
-                            } else {
-                                lines.push(format!(
-                                    "Command '{command_name}' is not registered yet."
-                                ));
-                            }
-                        } else {
-                            lines.push(format!(
-                                "Available commands: {}",
-                                registered_commands()
-                                    .iter()
-                                    .map(|definition| definition.name)
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ));
-                        }
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command help",
-                            &lines,
-                        )?;
+                    KeyCode::Char(character)
+                        if !key_event
+                            .modifiers
+                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    {
+                        input_buffer.push(character);
+                        write!(output, "{character}")?;
+                        output.flush()?;
                     }
-                    Ok(CommandRequest::LinuxMapping(request)) => {
-                        if let Some(mapping) = find_mapping(&request.term) {
-                            let lines = render_mapping(mapping)
-                                .lines()
-                                .map(str::to_string)
-                                .collect::<Vec<_>>();
-                            render_command_result(
-                                output,
-                                workspace,
-                                session,
-                                current_menu,
-                                "Linux mapping result",
-                                &lines,
-                            )?;
-                        } else {
-                            render_command_result(
-                                output,
-                                workspace,
-                                session,
-                                current_menu,
-                                "Linux mapping result",
-                                &[format!(
-                                    "Linux mapping term '{}' is not registered yet.",
-                                    request.term
-                                )],
-                            )?;
-                        }
+                    KeyCode::Tab => {
+                        input_buffer.push(' ');
+                        write!(output, " ")?;
+                        output.flush()?;
                     }
-                    Ok(CommandRequest::DisplayWorkspacePath) => {
-                        let lines = display_linux_path(&session_linux_path)
-                            .lines()
-                            .map(str::to_string)
-                            .collect::<Vec<_>>();
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Linux directory view",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::DisplayWorkspaceListing) => {
-                        let mut lines = vec![
-                            "Linux host view: entries inside the current session directory"
-                                .to_string(),
-                            format!("Directory: {}", session_linux_path.display()),
-                            "Rust/400 note: this lists host Linux files and directories, not emulated libraries or objects.".to_string(),
-                        ];
-                        match list_linux_directory_entries(&session_linux_path) {
-                            Ok(entries) if entries.is_empty() => {
-                                lines.push(
-                                    "No files or directories exist in this Linux directory."
-                                        .to_string(),
-                                );
-                            }
-                            Ok(entries) => {
-                                for entry in entries {
-                                    lines.push(format!("- {:<7} {}", entry.kind, entry.name));
-                                }
-                            }
-                            Err(error) => {
-                                lines.push(format!(
-                                    "Could not list Linux directory entries: {error}"
-                                ));
-                            }
-                        }
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Linux directory view",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::DisplayLinuxUsers) => {
-                        let mut lines = vec![
-                            "Linux host view: user account summary".to_string(),
-                            "Rust/400 note: Linux accounts and Rust/400 user profiles are related learning concepts, not the same authority model.".to_string(),
-                        ];
-                        match read_host_linux_users() {
-                            Ok(users) if users.is_empty() => {
-                                lines.push("No Linux user accounts were discovered.".to_string());
-                            }
-                            Ok(users) => {
-                                for user in users.into_iter().take(12) {
-                                    lines.push(format!(
-                                        "- {name} uid={uid} gid={gid} home={home} shell={shell}",
-                                        name = user.username,
-                                        uid = user.uid,
-                                        gid = user.gid,
-                                        home = user.home,
-                                        shell = user.shell
-                                    ));
-                                }
-                                lines.push(
-                                    "Displayed the first 12 entries from /etc/passwd for learning purposes."
-                                        .to_string(),
-                                );
-                            }
-                            Err(error) => {
-                                lines.push(format!("Could not read Linux users: {error}"))
-                            }
-                        }
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Linux user summary",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::CreateLibrary(request)) => {
-                        let lines = match create_library(
-                            workspace,
-                            &request.library,
-                            request.text.as_deref(),
-                        ) {
-                            Ok(record) => vec![format!(
-                                "CRTLIB created library {}{}.",
-                                record.name,
-                                record
-                                    .text
-                                    .as_deref()
-                                    .map(|text| format!(" with text '{text}'"))
-                                    .unwrap_or_default()
-                            )],
-                            Err(error) => vec![error.to_string()],
-                        };
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::DisplayLibrary(request)) => {
-                        let lines = match find_library(workspace, &request.library) {
-                            Ok(Some(record)) => {
-                                vec![
-                                    format!("Library: {}", record.name),
-                                    format!("Text: {}", record.text.as_deref().unwrap_or("*NONE")),
-                                    format!("Created: {}", record.created_at_epoch_seconds),
-                                ]
-                            }
-                            Ok(None) => {
-                                vec![format!("Library {} does not exist.", request.library)]
-                            }
-                            Err(error) => vec![error.to_string()],
-                        };
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::WorkLibrary) => {
-                        let mut lines = Vec::new();
-                        match list_libraries(workspace) {
-                            Ok(libraries) if libraries.is_empty() => {
-                                lines.push(
-                                    "No libraries exist in the current Rust/400 workspace."
-                                        .to_string(),
-                                );
-                                lines.push(
-                                    "Try next: CRTLIB LIB(MYLIB) TEXT('Learning library')"
-                                        .to_string(),
-                                );
-                            }
-                            Ok(libraries) => {
-                                lines.push("Libraries in current workspace:".to_string());
-                                for library in libraries {
-                                    lines.push(format!(
-                                        "- {}{}",
-                                        library.name,
-                                        library
-                                            .text
-                                            .as_deref()
-                                            .map(|text| format!(" -- {text}"))
-                                            .unwrap_or_default()
-                                    ));
-                                }
-                            }
-                            Err(error) => lines.push(error.to_string()),
-                        }
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::DisplayJob) => {
-                        let lines = vec![
-                            format!("Job: {}", session.job_name()),
-                            format!("User: {}", session.current_user()),
-                            format!("Status: {}", session.status()),
-                            format!("Started: {}", session.started_at_epoch_seconds()),
-                            format!("Workspace: {}", workspace.root().display()),
-                        ];
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::DisplayUserProfile) => {
-                        let lines = vec![
-                            format!("User profile: {}", session.current_user()),
-                            "Profile status: ENABLED".to_string(),
-                            format!("Current job: {}", session.job_name()),
-                            "Linux analogy: similar to the signed-in shell user, but contained inside Rust/400.".to_string(),
-                        ];
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::SendMessage(request)) => {
-                        let mut lines = vec![format!(
-                            "SNDMSG would send '{}' to {} recipient(s).",
-                            request.message,
-                            request.recipients.len()
-                        )];
-                        if request.recipients.is_empty() {
-                            lines.push("Hint: add TO(name) for a recipient, for example SNDMSG MSG('Hello') TO(QSYSOPR).".to_string());
-                        }
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Ok(CommandRequest::WorkObject(request)) => {
-                        let lines = vec![format!(
-                            "Command 'WRKOBJ' is mapped to handler {:?} with LIB({}) OBJ({}).",
-                            definition.handler,
-                            request.library.as_deref().unwrap_or("*NONE"),
-                            request.object.as_deref().unwrap_or("*NONE")
-                        )];
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Command result",
-                            &lines,
-                        )?;
-                    }
-                    Err(error) => {
-                        render_command_result(
-                            output,
-                            workspace,
-                            session,
-                            current_menu,
-                            "Validation error",
-                            &[format!("Validation error: {error}")],
-                        )?;
-                    }
+                    _ => {}
                 }
             }
-            Err(error) => {
-                let mut lines = vec![format!("Syntax error: {error}")];
-                if let Some(suggestion) = combined_command_hint(command) {
-                    lines.push(suggestion);
-                }
-                render_command_result(
-                    output,
-                    workspace,
-                    session,
-                    current_menu,
-                    "Syntax error",
-                    &lines,
-                )?;
-            }
+            _ => {}
         }
     }
 }
@@ -541,6 +282,429 @@ fn render_command_result(
         "  Enter EXIT in the command line to end the session."
     )?;
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct SessionState {
+    current_menu: &'static str,
+    last_direct_input: Option<String>,
+    session_linux_path: PathBuf,
+}
+
+impl SessionState {
+    fn new(workspace: &Workspace) -> Self {
+        Self {
+            current_menu: "MAIN",
+            last_direct_input: None,
+            session_linux_path: determine_session_linux_path(workspace.root()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum LoopControl {
+    Continue,
+    Exit,
+}
+
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn activate() -> io::Result<Self> {
+        enable_raw_mode().map_err(io::Error::other)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
+
+fn process_input(
+    command: &str,
+    workspace: &Workspace,
+    session: &SessionContext,
+    state: &mut SessionState,
+    output: &mut impl Write,
+) -> io::Result<LoopControl> {
+    if let Some(result) = try_function_key(
+        command,
+        state.current_menu,
+        &mut state.last_direct_input,
+        output,
+    )? {
+        return match result {
+            FunctionKeyResult::Continue => Ok(LoopControl::Continue),
+            FunctionKeyResult::Render(menu_id) => {
+                state.current_menu = menu_id;
+                render_active_screen(output, workspace, session, state.current_menu)?;
+                Ok(LoopControl::Continue)
+            }
+            FunctionKeyResult::Exit => Ok(LoopControl::Exit),
+        };
+    }
+
+    if let Some(result) = try_menu_selection(command, state.current_menu, output)? {
+        return match result {
+            MenuSelectionResult::Continue => Ok(LoopControl::Continue),
+            MenuSelectionResult::Render(menu_id) => {
+                state.current_menu = menu_id;
+                render_active_screen(output, workspace, session, state.current_menu)?;
+                Ok(LoopControl::Continue)
+            }
+            MenuSelectionResult::Exit => Ok(LoopControl::Exit),
+        };
+    }
+
+    state.last_direct_input = Some(command.to_string());
+
+    match parse_command(command) {
+        Ok(parsed) => {
+            let Some(definition) = find_command(&parsed.name) else {
+                let mut lines = vec![format!(
+                    "Command '{}' is not registered yet. Use HELP for available commands.",
+                    parsed.name
+                )];
+                if let Some(suggestion) = combined_command_hint(command) {
+                    lines.push(suggestion);
+                }
+                render_command_result(
+                    output,
+                    workspace,
+                    session,
+                    state.current_menu,
+                    "Command result",
+                    &lines,
+                )?;
+                return Ok(LoopControl::Continue);
+            };
+
+            match build_request(&parsed, definition) {
+                Ok(CommandRequest::Exit) => {
+                    writeln!(output, "Session ended.")?;
+                    Ok(LoopControl::Exit)
+                }
+                Ok(CommandRequest::Help(request)) => {
+                    let mut lines = Vec::new();
+                    if let Some(command_name) = request.command {
+                        if let Some(help_definition) = find_command(&command_name) {
+                            lines.extend(render_help(help_definition).lines().map(str::to_string));
+                        } else {
+                            lines.push(format!("Command '{command_name}' is not registered yet."));
+                        }
+                    } else {
+                        lines.push(format!(
+                            "Available commands: {}",
+                            registered_commands()
+                                .iter()
+                                .map(|definition| definition.name)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command help",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::LinuxMapping(request)) => {
+                    let lines = if let Some(mapping) = find_mapping(&request.term) {
+                        render_mapping(mapping)
+                            .lines()
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    } else {
+                        vec![format!(
+                            "Linux mapping term '{}' is not registered yet.",
+                            request.term
+                        )]
+                    };
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Linux mapping result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayWorkspacePath) => {
+                    let lines = display_linux_path(&state.session_linux_path)
+                        .lines()
+                        .map(str::to_string)
+                        .collect::<Vec<_>>();
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Linux directory view",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayWorkspaceListing) => {
+                    let mut lines = vec![
+                        "Linux host view: entries inside the current session directory"
+                            .to_string(),
+                        format!("Directory: {}", state.session_linux_path.display()),
+                        "Rust/400 note: this lists host Linux files and directories, not emulated libraries or objects.".to_string(),
+                    ];
+                    match list_linux_directory_entries(&state.session_linux_path) {
+                        Ok(entries) if entries.is_empty() => {
+                            lines.push(
+                                "No files or directories exist in this Linux directory."
+                                    .to_string(),
+                            );
+                        }
+                        Ok(entries) => {
+                            for entry in entries {
+                                lines.push(format!("- {:<7} {}", entry.kind, entry.name));
+                            }
+                        }
+                        Err(error) => {
+                            lines.push(format!("Could not list Linux directory entries: {error}"));
+                        }
+                    }
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Linux directory view",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayLinuxUsers) => {
+                    let mut lines = vec![
+                        "Linux host view: user account summary".to_string(),
+                        "Rust/400 note: Linux accounts and Rust/400 user profiles are related learning concepts, not the same authority model.".to_string(),
+                    ];
+                    match read_host_linux_users() {
+                        Ok(users) if users.is_empty() => {
+                            lines.push("No Linux user accounts were discovered.".to_string());
+                        }
+                        Ok(users) => {
+                            for user in users.into_iter().take(12) {
+                                lines.push(format!(
+                                    "- {name} uid={uid} gid={gid} home={home} shell={shell}",
+                                    name = user.username,
+                                    uid = user.uid,
+                                    gid = user.gid,
+                                    home = user.home,
+                                    shell = user.shell
+                                ));
+                            }
+                            lines.push(
+                                "Displayed the first 12 entries from /etc/passwd for learning purposes."
+                                    .to_string(),
+                            );
+                        }
+                        Err(error) => lines.push(format!("Could not read Linux users: {error}")),
+                    }
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Linux user summary",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::CreateLibrary(request)) => {
+                    let lines = match create_library(
+                        workspace,
+                        &request.library,
+                        request.text.as_deref(),
+                    ) {
+                        Ok(record) => vec![format!(
+                            "CRTLIB created library {}{}.",
+                            record.name,
+                            record
+                                .text
+                                .as_deref()
+                                .map(|text| format!(" with text '{text}'"))
+                                .unwrap_or_default()
+                        )],
+                        Err(error) => vec![error.to_string()],
+                    };
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayLibrary(request)) => {
+                    let lines = match find_library(workspace, &request.library) {
+                        Ok(Some(record)) => vec![
+                            format!("Library: {}", record.name),
+                            format!("Text: {}", record.text.as_deref().unwrap_or("*NONE")),
+                            format!("Created: {}", record.created_at_epoch_seconds),
+                        ],
+                        Ok(None) => vec![format!("Library {} does not exist.", request.library)],
+                        Err(error) => vec![error.to_string()],
+                    };
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::WorkLibrary) => {
+                    let mut lines = Vec::new();
+                    match list_libraries(workspace) {
+                        Ok(libraries) if libraries.is_empty() => {
+                            lines.push(
+                                "No libraries exist in the current Rust/400 workspace.".to_string(),
+                            );
+                            lines.push(
+                                "Try next: CRTLIB LIB(MYLIB) TEXT('Learning library')".to_string(),
+                            );
+                        }
+                        Ok(libraries) => {
+                            lines.push("Libraries in current workspace:".to_string());
+                            for library in libraries {
+                                lines.push(format!(
+                                    "- {}{}",
+                                    library.name,
+                                    library
+                                        .text
+                                        .as_deref()
+                                        .map(|text| format!(" -- {text}"))
+                                        .unwrap_or_default()
+                                ));
+                            }
+                        }
+                        Err(error) => lines.push(error.to_string()),
+                    }
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayJob) => {
+                    let lines = vec![
+                        format!("Job: {}", session.job_name()),
+                        format!("User: {}", session.current_user()),
+                        format!("Status: {}", session.status()),
+                        format!("Started: {}", session.started_at_epoch_seconds()),
+                        format!("Workspace: {}", workspace.root().display()),
+                    ];
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::DisplayUserProfile) => {
+                    let lines = vec![
+                        format!("User profile: {}", session.current_user()),
+                        "Profile status: ENABLED".to_string(),
+                        format!("Current job: {}", session.job_name()),
+                        "Linux analogy: similar to the signed-in shell user, but contained inside Rust/400.".to_string(),
+                    ];
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::SendMessage(request)) => {
+                    let mut lines = vec![format!(
+                        "SNDMSG would send '{}' to {} recipient(s).",
+                        request.message,
+                        request.recipients.len()
+                    )];
+                    if request.recipients.is_empty() {
+                        lines.push("Hint: add TO(name) for a recipient, for example SNDMSG MSG('Hello') TO(QSYSOPR).".to_string());
+                    }
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Ok(CommandRequest::WorkObject(request)) => {
+                    let lines = vec![format!(
+                        "Command 'WRKOBJ' is mapped to handler {:?} with LIB({}) OBJ({}).",
+                        definition.handler,
+                        request.library.as_deref().unwrap_or("*NONE"),
+                        request.object.as_deref().unwrap_or("*NONE")
+                    )];
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Command result",
+                        &lines,
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+                Err(error) => {
+                    render_command_result(
+                        output,
+                        workspace,
+                        session,
+                        state.current_menu,
+                        "Validation error",
+                        &[format!("Validation error: {error}")],
+                    )?;
+                    Ok(LoopControl::Continue)
+                }
+            }
+        }
+        Err(error) => {
+            let mut lines = vec![format!("Syntax error: {error}")];
+            if let Some(suggestion) = combined_command_hint(command) {
+                lines.push(suggestion);
+            }
+            render_command_result(
+                output,
+                workspace,
+                session,
+                state.current_menu,
+                "Syntax error",
+                &lines,
+            )?;
+            Ok(LoopControl::Continue)
+        }
+    }
 }
 
 fn render_active_screen(
